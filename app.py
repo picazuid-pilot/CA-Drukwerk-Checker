@@ -61,7 +61,7 @@ reader = load_ocr_reader()
 def download_official_logos():
     logos = []
     # Zoekt lokaal in plaats van op internet
-    paden = ["assets/logo1.png", "assets/logo2.png"]
+    paden = ["assets/logo1.png", "assets/logo2.png", "assets/logo3.png", "assets/logo4.png", "assets/logo5.png", "assets/logo6.png", "assets/logo7.png", "assets/logo8.png", "assets/logo9.png", "assets/logo10.png", "assets/logo11.png", "assets/logo12.png"]
     for pad in paden:
         try:
             img = cv2.imread(pad, cv2.IMREAD_GRAYSCALE)
