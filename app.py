@@ -9,13 +9,13 @@ from difflib import SequenceMatcher
 
 # Pagina-instellingen
 st.set_page_config(
-    page_title="C.A. Drukwerk Checker v1.7",
+    page_title="C.A. Drukwerk Checker v1.8",
     page_icon="📋",
     layout="wide"
 )
 
 st.title("📋 C.A. Drukwerk Checker")
-st.subheader("Volledige Productie-Matrix: Hybride Geometrie + Gehele Flyer Fallback-Scan")
+st.subheader("Volledige Productie-Matrix: Stabiele Hybride Detectie")
 
 def word_similarity(w1, w2):
     return SequenceMatcher(None, w1.lower().strip(), w2.lower().strip()).ratio()
@@ -63,7 +63,7 @@ def load_strict_reference_logos():
 
 ref_logos = load_strict_reference_logos()
 
-st.info("⚙️ **Systeemstatus:** Actief. Hybride detectie operationeel (Hough Circles + Full-image template fallback).")
+st.info("⚙️ **Systeemstatus:** Actief. Hybride detectie operationeel (Vaste matrix-fix geladen).")
 
 uploaded_file = st.file_uploader("Upload hier de flyer (JPG, JPEG, PNG)", type=["jpg", "jpeg", "png"])
 
@@ -132,14 +132,18 @@ if uploaded_file is not None:
                 cv2.circle(img_canvas, (detected_x, detected_y), detected_r, (255, 0, 255), 3)
 
         # ---------------------------------------------------------------------
-        # STAP 2 & 3: MULTI-SCALE MATCHING (MET GEHELE FLYER FALLBACK)
+        # STAP 2 & 3: MULTI-SCALE MATCHING (FIXED SEARCH AREA LOGIC)
         # ---------------------------------------------------------------------
         logo_status = "MISSING"
         logo_taal = "ONBEKEND"
         logo_variant_detail = ""
         best_match_score = 0.0
         
-        search_area_gray = img_gray if best_crop is None else cv2.cvtColor(best_crop, cv2.COLOR_RGB2GRAY)
+        # FIX: We bepalen de zoekruimte één keer vast vóór de loop om type-mismatches te voorkomen
+        if logo_gevonden_geometrisch and best_crop is not None:
+            search_area_gray = cv2.cvtColor(best_crop, cv2.COLOR_RGB2GRAY)
+        else:
+            search_area_gray = img_gray.copy()
         
         for variant_naam, ref_img in ref_logos.items():
             ref_gray = cv2.cvtColor(ref_img, cv2.COLOR_RGB2GRAY)
@@ -160,6 +164,7 @@ if uploaded_file is not None:
                     logo_variant_detail = variant_naam
                     logo_taal = "NL" if "NL" in variant_naam else "EN"
                     
+                    # Als we op de fallback draaien, slaan we hier de coördinaten en de crop op
                     if not logo_gevonden_geometrisch:
                         detected_x, detected_y = max_loc[0] + width//2, max_loc[1] + height//2
                         detected_r = width//2
@@ -202,11 +207,12 @@ if uploaded_file is not None:
         # ---------------------------------------------------------------------
         logo_kleur_opmerking = "Standaard opmaak"
         if logo_status == "VERMOEDELIJK_OK" and best_crop is not None:
-            crop_hsv = cv2.cvtColor(best_crop, cv2.COLOR_RGB2HSV)
-            avg_sat = np.mean(crop_hsv[:, :, 1])
-            
-            if avg_sat > 35:
-                logo_kleur_opmerking = "Aangepast aan flyer-stijl (Gekleurd)"
+            # Garandeer dat best_crop 3 kanalen heeft voor HSV-conversie
+            if len(best_crop.shape) == 3:
+                crop_hsv = cv2.cvtColor(best_crop, cv2.COLOR_RGB2HSV)
+                avg_sat = np.mean(crop_hsv[:, :, 1])
+                if avg_sat > 35:
+                    logo_kleur_opmerking = "Aangepast aan flyer-stijl (Gekleurd)"
             
             contrast_score = np.std(cv2.cvtColor(best_crop, cv2.COLOR_RGB2GRAY))
             if contrast_score < 15:
