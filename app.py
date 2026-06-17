@@ -9,13 +9,13 @@ from difflib import SequenceMatcher
 
 # Pagina-instellingen
 st.set_page_config(
-    page_title="C.A. Drukwerk Checker v2.0",
+    page_title="C.A. Drukwerk Checker v2.1",
     page_icon="📋",
     layout="wide"
 )
 
 st.title("📋 C.A. Drukwerk Checker")
-st.subheader("Definitieve Productie-Matrix: Genuanceerde Huisstijl-Inspectie")
+st.subheader("Geometrie-First Productie-Matrix (Cirkel ➔ Monogram ➔ Validatie)")
 
 def word_similarity(w1, w2):
     return SequenceMatcher(None, w1.lower().strip(), w2.lower().strip()).ratio()
@@ -63,7 +63,7 @@ def load_strict_reference_logos():
 
 ref_logos = load_strict_reference_logos()
 
-st.info("⚙️ **Systeemstatus:** Actief. Genuanceerde contrast-matrix geladen (v2.0).")
+st.info("⚙️ **Systeemstatus:** Actief. Geometrie-first architectuur operationeel.")
 
 uploaded_file = st.file_uploader("Upload hier de flyer (JPG, JPEG, PNG)", type=["jpg", "jpeg", "png"])
 
@@ -103,7 +103,7 @@ if uploaded_file is not None:
         st.markdown("### 🖼️ C.A. Logo Huisstijl Inspectie")
         
         # ---------------------------------------------------------------------
-        # STAP 1: GEOMETRISCHE DETECTIE (Tolerante Hough Circles)
+        # LAAG 1: GEOMETRISCHE DETECTIE (Cirkels Opsporen via Hough Circles)
         # ---------------------------------------------------------------------
         blurred = cv2.medianBlur(img_gray, 5)
         circles = cv2.HoughCircles(
@@ -121,7 +121,7 @@ if uploaded_file is not None:
             for i in circles[0, :1]: 
                 detected_x, detected_y, detected_r = i[0], i[1], i[2]
                 
-                marge = int(detected_r * 0.30)
+                marge = int(detected_r * 0.30)  # Ruime uitsnede voor rand-tekst
                 h_img, w_img = img_gray.shape
                 ymin = max(0, detected_y - detected_r - marge)
                 ymax = min(h_img, detected_y + detected_r + marge)
@@ -133,7 +133,7 @@ if uploaded_file is not None:
                 cv2.circle(img_canvas, (detected_x, detected_y), detected_r, (255, 0, 255), 3)
 
         # ---------------------------------------------------------------------
-        # STAP 2 & 3: MULTI-SCALE MATCHING (CRACH-FREE LOGICA via img_gray)
+        # LAAG 2: MONOGRAM DETECTIE (Template Matching op de uitsnede of hele flyer)
         # ---------------------------------------------------------------------
         logo_status = "MISSING"
         logo_taal = "ONBEKEND"
@@ -164,11 +164,13 @@ if uploaded_file is not None:
                     logo_variant_detail = variant_naam
                     logo_taal = "NL" if "NL" in variant_naam else "EN"
                     
+                    # Fallback herstelmoed: als de cirkeldetector faalde, crop hier alsnog
                     if not logo_gevonden_geometrisch:
                         detected_x, detected_y = max_loc[0] + width//2, max_loc[1] + height//2
                         detected_r = width//2
                         best_crop = img_np[max_loc[1]:max_loc[1]+height, max_loc[0]:max_loc[0]+width]
 
+        # Score-drempel realistisch afgesteld voor kleine of gecomprimeerde logo's
         if best_match_score >= 0.55:
             logo_status = "VERMOEDELIJK_OK"
         elif best_match_score >= 0.40:
@@ -180,7 +182,7 @@ if uploaded_file is not None:
             cv2.circle(img_canvas, (detected_x, detected_y), detected_r, (255, 0, 255), 3)
 
         # ---------------------------------------------------------------------
-        # STAP 4: ORB STRUCTUUR VALIDATIE (INTEGRITEITSCHECK)
+        # LAAG 3: LOGO-VALIDATIE (ORB Structuurcontrole binnen de uitsnede)
         # ---------------------------------------------------------------------
         orb_matches_gevonden = 0
         if logo_status != "MISSING" and best_crop is not None:
@@ -202,11 +204,12 @@ if uploaded_file is not None:
                 good_matches = [m for m in matches if m.distance < 40]
                 orb_matches_gevonden = len(good_matches)
                 
+                # Tolerante controle vanwege kleine logo-resoluties op flyers
                 if orb_matches_gevonden < 12 and logo_status == "VERMOEDELIJK_OK":
                     logo_status = "AANGEPAST"
 
         # ---------------------------------------------------------------------
-        # STAP 5: GEOPTIMALISEERDE LEESBAARHEID- EN CONTRASTCHECK (v2.0 Fix)
+        # LAAG 4: LEESBAARHEID- EN CONTRASTCHECK (Voorbeeld: Groen op Donkergrijs)
         # ---------------------------------------------------------------------
         logo_kleur_opmerking = "Standaard opmaak"
         if logo_status == "VERMOEDELIJK_OK" and best_crop is not None:
@@ -224,7 +227,7 @@ if uploaded_file is not None:
             if contrast_score < 13:
                 logo_status = "SLECHT_CONTRAST"
 
-        # OUTPUT LOGO RAPPORTAGE (AANGEPAST VOOR DE BBQ-FLYER SITUATIE)
+        # RAPPORTAGE OP BASIS VAN DE DRIE LAGEN
         st.markdown("#### 📊 C.A. Logo Validatie Rapport")
         if logo_status == "VERMOEDELIJK_OK":
             v_type = "met TM/® binnen de cirkel" if "BINNEN" in logo_variant_detail else "met TM/® buiten de cirkel"
@@ -232,17 +235,137 @@ if uploaded_file is not None:
             st.caption(f"🎨 *Stijl-notitie: {logo_kleur_opmerking} (Vorm en structuur zijn correct).*")
             logo_score_final = 25
         elif logo_status == "SLECHT_CONTRAST":
-            # --- v2.0 FIX: HARD AFKEUR OMGEBOUWD NAAR CONSTRUCTIEVE WAARSCHUWING + PARTIËLE SCORE ---
             v_type = "met TM/® binnen de cirkel" if "BINNEN" in logo_variant_detail else "met TM/® buiten de cirkel"
-            st.warning(f"⚠️ **Logo gedetecteerd, maar onleesbaar (Te laag contrast).**")
-            st.write(f"Vorm en variant ({logo_taal} {v_type}) zijn correct, maar het logo valt weg tegen de donkere achtergrond. Dit drukwerk is kwalitatief onvoldoende.")
-            st.caption("💡 *Constructief advies: Maak het logo wit (of diepblauw) zodat het goed afsteekt.*")
-            logo_score_final = 10 # Genuanceerde score in plaats van 0
+            st.warning(f"⚠️ **Logo gedetecteerd, maar heeft een te laag contrast.**")
+            st.write(f"De geometrische vormen en het monogram ({logo_taal} {v_type}) zijn correct geïdentificeerd, maar het logo valt visueel weg tegen de achtergrond.")
+            st.caption("💡 *Grafisch advies: Gebruik een wit logo of geef het logo een duidelijke witte contour (outline) voor drukwerk.*")
+            logo_score_final = 15  # Genuanceerde score in plaats van harde afkeur
         elif logo_status == "AANGEPAST":
-            st.error(f"❌ **Logo inhoudelijk bewerkt:** De verhoudingen, letters of cirkelstructuur wijken af van de officiële richtlijnen. (ORB-matches: {orb_matches_gevonden})")
+            st.error(f"❌ **Logo inhoudelijk bewerkt:** De verhoudingen, letters of cirkelstructuur wijken te veel af van de officiële richtlijnen.")
             logo_score_final = 0
         else:
-            st.error("❌ **Kritiek Matrix-element mist:** Geen officieel C.A.-logo aangetroffen.")
+            st.error("❌ **Kritiek Matrix-element mist:** Geen officieel C.A.-logo aangetroffen via de geometrische filters.")
             logo_score_final = 0
 
-        # ... [OCR SABOTAGE CONTROLE & REST VAN DE MATRIX BLIJFT GELIJK] ...
+        # ---------------------------------------------------------------------
+        # INHOUDELIJKE TEXT MATRIX & SABOTAGE-DETECTIE (OCR)
+        # ---------------------------------------------------------------------
+        st.markdown("---")
+        st.markdown("### 📝 Inhoudelijke Matrix Analyse")
+        
+        with st.spinner("Scannen van flyertekst via Multi-Pass OCR..."):
+            img_enhanced = cv2.adaptiveThreshold(img_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+            img_clahe = clahe.apply(img_gray)
+            
+            ocr_results = reader.readtext(img_np, detail=1) + reader.readtext(img_enhanced, detail=1) + reader.readtext(img_clahe, detail=1)
+            
+            sabotage_keywords = ["unity", "service", "recovery", "just for today", "powerlessness", "serenity"]
+            sabotage_gevonden = set()
+
+            for (bbox, text, prob) in ocr_results:
+                if prob < 0.30:
+                    continue
+                
+                txt_clean = text.replace("I", "1").replace("l", "1").replace("O", "0")
+                key = txt_clean.lower().strip()
+                
+                if key in gevonden_keys:
+                    continue
+                gevonden_keys.add(key)
+                unieke_teksten.append(txt_clean)
+                
+                woorden_in_regel = txt_clean.lower().split()
+                alle_losse_woorden.extend(woorden_in_regel)
+                
+                for skw in sabotage_keywords:
+                    if skw in key or any(word_similarity(skw, w) >= 0.85 for w in woorden_in_regel):
+                        sabotage_gevonden.add(skw)
+
+                tl = tuple(map(int, bbox[0]))
+                br = tuple(map(int, bbox[2]))
+                cv2.rectangle(img_canvas, tl, br, (0, 255, 0), 2)
+                if re.search(r'\b\d{1,2}[:.;]?\d{2}\b', txt_clean):
+                    tijd_regels.append(txt_clean.lower())
+                    cv2.rectangle(img_canvas, tl, br, (255, 0, 0), 3)
+
+            volledige_tekst = " ".join(unieke_teksten)
+            txt_lower = volledige_tekst.lower()
+
+            if sabotage_gevonden:
+                st.error(f"🚨 **CRITIEK INHOUDELIJK CONFLIKT:** Deze flyer gebruikt termen van andere fellowships (*{', '.join(sabotage_gevonden)}*). Dit drukwerk mag niet namens C.A. verspreid worden.")
+                logo_score_final = 0
+
+            # 6e Traditie gewogen controle
+            sterke_keywords = ["6e", "traditie", "kerken", "sekten", "hulpverlenende", "instanties"]
+            traditie_score = sum(1 for kw in sterke_keywords if any(word_similarity(kw, w) >= 0.80 for w in alle_losse_woorden))
+            traditie_ok = traditie_score >= 3
+
+            if traditie_ok:
+                st.success(f"✅ **6e Traditie Disclaimer aanwezig** ({traditie_score}/5 sterke woorden)")
+            else:
+                st.error(f"❌ **6e Traditie Disclaimer incompleet** ({traditie_score}/5 sterke woorden)")
+
+            # Groepsnaam / Organisator
+            organisator_match = re.search(r'ca[\s\-]+[a-z0-9]+', volledige_tekst, re.IGNORECASE)
+            if organisator_match:
+                organisator_gevonden = True
+                organisator_naam = organisator_match.group(0).upper()
+                st.success(f"✅ **Organisator:** {organisator_naam}")
+            
+            # Datum
+            maanden = "januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december|jan|feb|mrt|apr|jun|jul|aug|sep|okt|nov|dec"
+            datum_match = re.search(rf'(\d+[-/]\d+[-/]\d+|\d+\s+({maanden}))', volledige_tekst, re.IGNORECASE)
+            if datum_match:
+                datum_gevonden = True
+                datum_waarde = datum_match.group(0)
+                st.success(f"✅ **Datum:** {datum_waarde}")
+            
+            # Tijdstip
+            if len(tijd_regels) >= 1:
+                tijd_gevonden = True
+                st.success(f"✅ **Tijdstip:** {tijd_regels[0]}")
+
+            # Locatie Score
+            locatie_score = (2 if "stadsstrand" in txt_lower else 0) + (1 if "hoorn" in txt_lower else 0)
+            if locatie_score >= 2:
+                locatie_gevonden = True
+                st.success("✅ **Locatie succesvol herleid**")
+
+            # Telefoonnummer
+            tel_pattern = r'(\+31\s?6|06)[-\s]?\d{2}[-\s]?\d{2}[-\s]?\d{2}[-\s]?\d{2}'
+            telefoon_match = re.search(tel_pattern, volledige_tekst)
+            if telefoon_match:
+                telefoon_gevonden = True
+                telefoon_waarde = telefoon_match.group(0)
+                st.success(f"📞 **Telefoonnummer:** {telefoon_waarde}")
+
+        # =====================================================================
+        # 📊 MATRIX SCORE RAPPORTAGE
+        # =====================================================================
+        st.markdown("---")
+        st.markdown("### 📊 Totale Matrix Score")
+        
+        score = logo_score_final
+        if traditie_ok: score += 25
+        if organisator_gevonden: score += 15
+        if datum_gevonden: score += 15
+        if tijd_gevonden: score += 10
+        if locatie_gevonden: score += 5
+        if telefoon_gevonden: score += 5
+        
+        if sabotage_gevonden:
+            score = 0 
+
+        st.metric(label="Totale Matrix Score", value=f"{score} / 100")
+        st.progress(score / 100)
+        
+        if score >= 90:
+            st.success("🎉 **GOEDGEKEURD VOOR VERSPREIDING:** De flyer voldoet aan de matrix-eisen (let eventueel op de contrast-waarschuwing).")
+        else:
+            st.error("❌ **AFGEKEURD:** Deze flyer bevat inhoudelijke conflicten, mist verplichte matrix-data of het logo ontbreekt volledig.")
+
+    with col2:
+        st.markdown("### 🖼️ Live Visuele Analyse")
+        st.caption("Paarse cirkel = Geometrische lokalisatie (Hough Circles / Monogram-scan).")
+        st.image(img_canvas, channels="RGB", use_container_width=True)
