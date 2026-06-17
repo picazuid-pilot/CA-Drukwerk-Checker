@@ -13,11 +13,9 @@ def simple_fuzzy_match(text1, text2):
     text1 = text1.lower().strip()
     text2 = text2.lower().strip()
     
-    # Check of een tekst de andere bevat
     if text1 in text2 or text2 in text1:
         return 100
 
-    # Check woorden die overlappen
     words1 = set(text1.split())
     words2 = set(text2.split())
     overlap = len(words1.intersection(words2))
@@ -34,7 +32,6 @@ def word_similarity(w1, w2):
     w1, w2 = w1.lower().strip(), w2.lower().strip()
     if w1 in w2 or w2 in w1:
         return 1.0
-    # Tel overlappende karakters (eenvoudige letter-voor-letter vergelijking)
     matches = sum(1 for c in w1 if c in w2)
     return matches / max(len(w1), len(w2))
 
@@ -59,7 +56,7 @@ def load_ocr_reader():
 
 reader = load_ocr_reader()
 
-# 2. Functie om logo's veilig te downloaden van GitHub
+# 2. Functie om logo's veilig te downloaden van GitHub + DEBUG INFO
 @st.cache_data
 def download_official_logos():
     logos = []
@@ -81,6 +78,12 @@ def download_official_logos():
 
 logos = download_official_logos()
 
+# Systeemonderhoud & Debug balk bovenaan (Punt 5)
+if len(logos) > 0:
+    st.info(f"⚙️ **Systeemstatus:** OCR-module online. {len(logos)} officiële referentielogo's succesvol ingeladen vanaf GitHub.")
+else:
+    st.error("⚠️ **Systeemstatus:** OCR online, maar kon geen referentielogo's downloaden vanaf GitHub. Beeldherkenning staat in fallback-modus.")
+
 # Bestandsuploader
 uploaded_file = st.file_uploader("Upload hier de flyer (JPG, JPEG, PNG)", type=["jpg", "jpeg", "png"])
 
@@ -90,11 +93,17 @@ if uploaded_file is not None:
         image_pil = Image.open(io.BytesIO(file_bytes))
         img_np = np.array(image_pil)
         
-        # --- Genereer contrast-voorwerking voor Multi-Pass OCR ---
+        # --- BEELDVOORBEWERKING MATRIX (Punt 2) ---
         img_gray_orig = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+        
+        # Pass 2: Adaptive Threshold (Voor scherpte)
         img_enhanced = cv2.adaptiveThreshold(
             img_gray_orig, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
         )
+        
+        # Pass 3: CLAHE (Voor lichte/vervaagde tekst onderaan)
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+        img_clahe = clahe.apply(img_gray_orig)
         
         img_canvas = img_np.copy()
         
@@ -105,7 +114,7 @@ if uploaded_file is not None:
     st.success("✅ Bestand succesvol geladen. Analyse start...")
 
     # =====================================================================
-    # CRUCIALE VERBETERING: Initialiseer ALLE variabelen vooraf om NameErrors te voorkomen!
+    # INITIALISATIE (Voorkomt crashes en NameErrors - Punt 4)
     # =====================================================================
     volledige_tekst = ""
     txt_lower = ""
@@ -134,26 +143,32 @@ if uploaded_file is not None:
         if reader is None:
             st.error("OCR-module is offline.")
         else:
-            with st.spinner("Tekst scannen en analyseren via Multi-Pass OCR..."):
+            with st.spinner("Tekst scannen via Multi-Pass OCR (Origineel + Contrast + CLAHE)..."):
                 try:
-                    # Multi-Pass OCR
+                    # Multi-Pass OCR scans combineren
                     ocr_results_orig = reader.readtext(img_np, detail=1)
                     ocr_results_enh = reader.readtext(img_enhanced, detail=1)
-                    ocr_results = ocr_results_orig + ocr_results_enh
+                    ocr_results_clahe = reader.readtext(img_clahe, detail=1)
+                    
+                    # Voeg alle resultaten samen
+                    ocr_results = ocr_results_orig + ocr_results_enh + ocr_results_clahe
                     
                     st.markdown("#### 🔍 Live OCR Debug Output")
-                    st.caption("Hieronder zie je exact wat de scanner regel-voor-regel aantreft:")
+                    st.caption("Hieronder zie je exact wat de scanner met hoge betrouwbaarheid aantreft:")
                     
                     for (bbox, text, prob) in ocr_results:
+                        # CRUCIAAL: Confidence filter (Punt 6) - negeer onleesbare rommel
+                        if prob < 0.30:
+                            continue
+                            
                         ruwe_regels.append(text)
-                        st.write(f"• OCR leest: `{text}`")
+                        st.write(f"• OCR leest (conf: {prob:.2f}): `{text}`")
                         
-                        # Normalisatie van tekst
+                        # Normalisatie van tekst (Symptoombestrijding OCR-fouten)
                         txt_clean = text
                         txt_clean = txt_clean.replace("O", "0").replace("o", "0")
                         txt_clean = txt_clean.replace("juii", "juli").replace("juIi", "juli").replace("ju1i", "juli")
-                        
-                        txt_clean = txt_lower = txt_clean.lower()
+                        txt_clean = txt_clean.lower()
                         txt_clean = txt_clean.replace("t0 t", "tot").replace("t0t", "tot")
                         
                         # Spaties binnen tijden herstellen
@@ -166,18 +181,18 @@ if uploaded_file is not None:
                         alle_teksten.append(txt_clean)
                         alle_losse_woorden.extend(txt_clean.split())
                         
-                        # Coördinaten en kaders (GROEN voor normale tekst)
+                        # Coördinaten en kaders (GROEN voor tekst)
                         tl = tuple(map(int, bbox[0]))
                         br = tuple(map(int, bbox[2]))
                         cv2.rectangle(img_canvas, tl, br, (0, 255, 0), 2)
                         
-                        # Tijd regex (BLAUW voor tijden)
+                        # Tijd herkenning (BLAUW kader)
                         tijd_matches = re.findall(r'\b\d{1,2}[:.;]?\d{2}\b', txt_clean)
                         if tijd_matches:
                             tijd_regels.append(txt_clean)
                             cv2.rectangle(img_canvas, tl, br, (255, 0, 0), 3)
 
-                    # Zet de hoofdstrings direct klaar
+                    # Voeg alle passes samen in één tekstblok
                     volledige_tekst = " ".join(alle_teksten)
                     txt_lower = volledige_tekst.lower()
                     
@@ -250,7 +265,7 @@ if uploaded_file is not None:
                     else:
                         st.warning("⚠️ **Geen telefoonnummer gevonden**")
 
-                    # --- 7. ROBUUSTE 6E TRADITIE CHECK ---
+                    # --- 7. VERBETERDE 6E TRADITIE CHECK (Trefwoorden - Punt 3) ---
                     traditie_keywords = ["6e", "traditie", "verbonden", "kerken", "sekten", "politieke", "hulpverlenende", "instanties"]
                     gevonden_traditie_woorden = []
                     
@@ -264,7 +279,7 @@ if uploaded_file is not None:
                     if zesde_traditie_score >= 5:
                         st.success(f"✅ **6e traditie aanwezig:** Disclaimer succesvol gedetecteerd ({zesde_traditie_score}/{len(traditie_keywords)} trefwoorden).")
                     elif zesde_traditie_score >= 3:
-                        st.warning(f"⚠️ **6e traditie gedeeltelijk of slecht leesbaar herkend** (Gevonden trefwoorden: {', '.join(set(gevonden_traditie_woorden))})")
+                        st.warning(f"⚠️ **6e traditie gedeeltelijk herleid** (Gevonden: {', '.join(set(gevonden_traditie_woorden))})")
                     else:
                         st.error("❌ **6e traditie ontbreekt of is onleesbaar:** Denk aan de verplichte CA-disclaimer!")
 
@@ -279,7 +294,7 @@ if uploaded_file is not None:
                 except Exception as ocr_error:
                     st.error(f"❌ Fout tijdens OCR-analyse: {ocr_error}")
 
-        # ---- LOGO CONTROLE ----
+        # ---- LOGO CONTROLE MATRIX (Template + Tekstueel - Punt 1) ----
         st.markdown("### 🖼️ CA-Logo Controle")
         logo_score = 0
         
@@ -293,7 +308,6 @@ if uploaded_file is not None:
                             if len(loc[0]) > 0:
                                 h, w = logo.shape
                                 pt = (loc[1][0], loc[0][0])
-                                # RODE kaders voor gedetecteerde logo's
                                 cv2.rectangle(img_canvas, pt, (pt[0] + w, pt[1] + h), (255, 0, 0), 4)
                                 logo_score += 2.5
                                 break
@@ -302,7 +316,7 @@ if uploaded_file is not None:
                 except Exception:
                     pass
 
-        # Tekstuele herkenning logo
+        # Tekstuele back-up herkenning (Alternatief bewijs bij gekleurde/vervaagde logo's!)
         logo_keywords = ["hoop", "vertrouwen", "moed", "cocaine", "anonymous"]
         gevonden_logo_woorden = []
         for kw in logo_keywords:
@@ -361,12 +375,7 @@ if uploaded_file is not None:
             else:
                 st.write("ℹ️ Geen Zoom-link")
 
-    # =====================================================================
-    # HIER GING HET MIS: Kolom 2 openen en de live preview tonen!
-    # =====================================================================
     with col2:
         st.markdown("### 🖼️ Live Geannoteerde Preview")
-        st.caption("Gedetecteerde tekstregels zijn groen omkaderd, tijden/datums blauw/rood.")
-        
-        # Toon de bewerkte canvas-afbeelding waarin OpenCV de kaders heeft getekend
+        st.caption("Gedetecteerde tekstregels zijn groen omkaderd, gedetecteerde logo's of tijden rood/blauw.")
         st.image(img_canvas, channels="RGB", use_container_width=True)
