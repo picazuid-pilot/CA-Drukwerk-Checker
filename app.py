@@ -49,27 +49,34 @@ def download_official_logos():
             pass
     return logos
 
+# Download logos (met fallback)
 logos = download_official_logos()
+st.sidebar.write(f"📦 Logo templates geladen: {len(logos)}")
 
-# 3. Helperfunctie voor tekstgelijkenis (Fuzzy Match per woord)
+# 3. Helperfunctie voor tekstgelijkenis (Fuzzy Match)
 def similarity(a, b):
     """Bereken hoe sterk twee woorden op elkaar lijken (0.0 - 1.0)"""
+    if not a or not b:
+        return 0.0
     return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
 
 def word_similarity_score(word, text_list, threshold=0.70):
     """Check of een woord voorkomt in een lijst met fuzzy matching"""
+    if not word or not text_list:
+        return False
+    word = word.lower().strip()
     for text in text_list:
         if similarity(word, text) >= threshold:
             return True
     return False
 
-# 4. Geavanceerde OCR-voorwerking (Multi-Pass voorbereiding)
+# 4. Multi-Pass OCR voorbereiding (zonder destructieve threshold)
 def prepare_ocr_passes(image):
     """Genereert meerdere varianten voor Multi-Pass OCR"""
     passes = []
     
     # Pass 1: Origineel
-    passes.append(("origineel", image))
+    passes.append(("origineel", image.copy()))
     
     # Pass 2: Opgeschaald (2x) voor kleine tekst
     h, w = image.shape[:2]
@@ -79,24 +86,37 @@ def prepare_ocr_passes(image):
         scaled = image.copy()
     passes.append(("opgeschaald", scaled))
     
-    # Pass 3: Adaptieve threshold (voor lichte tekst op lichte achtergrond)
-    gray = cv2.cvtColor(scaled, cv2.COLOR_RGB2GRAY)
-    enhanced = cv2.adaptiveThreshold(
-        gray,
-        255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        11,
-        2
-    )
-    # Terug naar 3-kanaals voor EasyOCR
-    enhanced_rgb = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2RGB)
-    passes.append(("enhanced", enhanced_rgb))
+    # Pass 3: Lichte contrastverbetering (zonder destructieve threshold)
+    lab = cv2.cvtColor(scaled, cv2.COLOR_RGB2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    l_enhanced = clahe.apply(l)
+    lab_enhanced = cv2.merge((l_enhanced, a, b))
+    enhanced = cv2.cvtColor(lab_enhanced, cv2.COLOR_LAB2RGB)
+    passes.append(("contrast", enhanced))
     
     return passes
 
 # Bestandsuploader
 uploaded_file = st.file_uploader("Upload hier de flyer (JPG, JPEG, PNG)", type=["jpg", "jpeg", "png"])
+
+# --- INITIALISEER ALLE VARIABELEN (voorkomt NameError) ---
+volledige_tekst = ""
+woorden_set = set()
+tijd_regels = []
+ruwe_regels_debug = []
+logo_gevonden = False
+logo_score = 0.0
+logo_methode = []
+traditie_score = 0
+totaal_keywords = 0
+organisator_gevonden = False
+gevonden_event = []
+datum_match = None
+locatie_gevonden = False
+telefoon_match = None
+email_match = None
+gevonden_online = []
 
 if uploaded_file is not None:
     file_bytes = uploaded_file.read()
@@ -124,12 +144,6 @@ if uploaded_file is not None:
     with col1:
         st.markdown("### 📝 Matrix Resultaten")
         
-        # --- INITIALISEER ALLE VARIABELEN ---
-        alle_woorden = []
-        alle_teksten_raw = []
-        tijd_regels = []
-        ruwe_regels_debug = []
-        
         if reader is None:
             st.error("OCR-module is offline.")
         else:
@@ -139,12 +153,12 @@ if uploaded_file is not None:
                     st.caption("Gedetecteerde tekst uit alle 3 de OCR-passes:")
                     
                     # --- MULTI-PASS OCR STRATEGIE ---
-                    all_ocr_results = []
+                    alle_woorden = []
+                    alle_teksten_raw = []
                     
                     for pass_name, img_pass in ocr_passes:
                         st.write(f"**Pass {pass_name}:**")
                         results = reader.readtext(img_pass, detail=1)
-                        all_ocr_results.append((pass_name, results))
                         
                         # Bepaal schaalfactor voor kaders
                         if pass_name == "origineel":
@@ -227,17 +241,14 @@ if uploaded_file is not None:
                     if not organisator_gevonden:
                         # Fallback: zoek naar "CA" + plaatsnaam
                         ca_plaats = False
-                        for i, woord in enumerate(woorden_set):
-                            if "ca" in woord or woord == "ca":
-                                # Check of er een plaatsnaam in de buurt is
-                                plaatsen = ["hoorn", "amsterdam", "rotterdam", "utrecht", "haarlem", "den haag"]
-                                for plaats in plaatsen:
-                                    if plaats in woorden_set:
-                                        ca_plaats = True
-                                        st.success(f"✅ **Organisator gevonden (fuzzy):** CA {plaats.title()}")
-                                        break
-                            if ca_plaats:
-                                break
+                        plaatsen = ["hoorn", "amsterdam", "rotterdam", "utrecht", "haarlem", "den haag"]
+                        for plaats in plaatsen:
+                            if plaats in woorden_set or word_similarity_score(plaats, woorden_set, 0.75):
+                                # Check of "ca" ook in de buurt is
+                                if "ca" in woorden_set or any("ca" in w for w in woorden_set):
+                                    ca_plaats = True
+                                    st.success(f"✅ **Organisator gevonden (fuzzy):** CA {plaats.title()}")
+                                    break
                         
                         if not ca_plaats:
                             st.warning("⚠️ **Geen specifieke CA-groep herkend**")
@@ -247,7 +258,7 @@ if uploaded_file is not None:
                         "event", "bbq", "fundraiser", "conventie", "feest", 
                         "zomer", "winter", "lente", "herfst", "workshop", 
                         "meeting", "speaker", "countdown", "bijeenkomst",
-                        "actie", "dag", "avond", "middag"
+                        "actie", "dag", "avond", "middag", "bijeen"
                     ]
                     
                     gevonden_event = [w for w in evenement_woorden if w in woorden_set]
@@ -319,48 +330,17 @@ if uploaded_file is not None:
 
                 except Exception as ocr_error:
                     st.error(f"❌ Fout tijdens OCR-analyse: {ocr_error}")
+                    import traceback
+                    st.code(traceback.format_exc())
 
-        # ---- LOGO CHECK (VERBETERD) ----
+        # ---- LOGO CHECK (ALLEEN FUZZY TEKST, GEEN TEMPLATE MATCHING) ----
         st.markdown("### 🖼️ CA-Logo Controle")
         
         logo_gevonden = False
-        logo_score = 0
+        logo_score = 0.0
         logo_methode = []
         
-        # Methode 1: Template Matching (toleranter)
-        if logos:
-            with st.spinner("Zoeken naar CA-logo via template matching..."):
-                try:
-                    for logo in logos:
-                        # Probeer verschillende thresholds en schalen
-                        for threshold in [0.45, 0.50, 0.55]:
-                            # Downscale logo voor betere match
-                            h, w = logo.shape
-                            for scale in [1.0, 0.75, 0.5]:
-                                if scale != 1.0:
-                                    logo_scaled = cv2.resize(logo, (int(w*scale), int(h*scale)))
-                                else:
-                                    logo_scaled = logo
-                                
-                                res = cv2.matchTemplate(img_gray_canvas, logo_scaled, cv2.TM_CCOEFF_NORMED)
-                                loc = np.where(res >= threshold)
-                                
-                                if len(loc[0]) > 0:
-                                    h_s, w_s = logo_scaled.shape
-                                    pt = (loc[1][0], loc[0][0])
-                                    cv2.rectangle(img_canvas, pt, (pt[0] + w_s, pt[1] + h_s), (255, 0, 0), 5)
-                                    logo_score += 2.0
-                                    logo_gevonden = True
-                                    logo_methode.append("template")
-                                    break
-                            if logo_gevonden:
-                                break
-                        if logo_gevonden:
-                            break
-                except Exception as e:
-                    st.warning(f"Template matching error: {e}")
-        
-        # Methode 2: Cirkeltekst herkenning (fuzzy)
+        # Methode 1: Cirkeltekst herkenning (fuzzy)
         logo_keywords = ["hoop", "vertrouwen", "moed", "cocaine", "anonymous"]
         gevonden_logo = []
         
@@ -370,17 +350,50 @@ if uploaded_file is not None:
         
         logo_tekst_score = len(gevonden_logo)
         if logo_tekst_score >= 2:
-            logo_score += 1.5
+            logo_score += 2.0
             logo_methode.append("tekst")
         if logo_tekst_score >= 3:
             logo_score += 1.0
         
-        # Methode 3: Zoek naar grote "CA" in tekst
-        if "ca" in woorden_set or any("ca" in w for w in woorden_set):
-            # Check of het een zelfstandig "CA" is (niet onderdeel van een ander woord)
-            if "ca" in woorden_set:
-                logo_score += 0.5
-                logo_methode.append("ca_tekst")
+        # Methode 2: Zoek naar "CA" als zelfstandig woord
+        if "ca" in woorden_set:
+            logo_score += 0.5
+            logo_methode.append("ca_tekst")
+        
+        # Methode 3: Zoek naar "Cocaine Anonymous" in tekst
+        if "cocaine" in woorden_set and "anonymous" in woorden_set:
+            logo_score += 1.0
+            logo_methode.append("coca_anoniem")
+        
+        # Methode 4: Template matching (alleen als fallback, met lage drempel)
+        if logos and logo_score < 2.0:
+            try:
+                for logo in logos:
+                    # Probeer verschillende thresholds en schalen
+                    for threshold in [0.40, 0.45, 0.50]:
+                        for scale in [1.0, 0.75, 0.5]:
+                            if scale != 1.0:
+                                h, w = logo.shape
+                                logo_scaled = cv2.resize(logo, (int(w*scale), int(h*scale)))
+                            else:
+                                logo_scaled = logo
+                            
+                            res = cv2.matchTemplate(img_gray_canvas, logo_scaled, cv2.TM_CCOEFF_NORMED)
+                            loc = np.where(res >= threshold)
+                            
+                            if len(loc[0]) > 0:
+                                h_s, w_s = logo_scaled.shape
+                                pt = (loc[1][0], loc[0][0])
+                                cv2.rectangle(img_canvas, pt, (pt[0] + w_s, pt[1] + h_s), (255, 0, 0), 5)
+                                logo_score += 1.5
+                                logo_methode.append("template")
+                                break
+                        if logo_score >= 1.5:
+                            break
+                    if logo_score >= 1.5:
+                        break
+            except Exception as e:
+                st.warning(f"Template matching fallback error: {e}")
         
         # Eindbeoordeling
         if logo_score >= 3.0:
@@ -450,9 +463,14 @@ if uploaded_file is not None:
                 if len(ruwe_regels_debug) > 50:
                     st.write(f"... en nog {len(ruwe_regels_debug)-50} regels")
 
-    # Sidebar met tijden
-    if tijd_regels:
-        with st.sidebar:
+    # Sidebar met tijden en debug info
+    with st.sidebar:
+        st.markdown("### 📊 Debug Info")
+        st.write(f"Logo templates: {len(logos)}")
+        st.write(f"Woorden gevonden: {len(woorden_set)}")
+        st.write(f"OCR passes: 3")
+        
+        if tijd_regels:
             st.markdown("### ⏰ Gedetecteerde tijden")
             for t in set(tijd_regels):
                 st.write(f"• `{t}`")
