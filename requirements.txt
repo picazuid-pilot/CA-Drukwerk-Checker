@@ -5,4 +5,4 @@ requests
 pillow
 easyocr
 rapidfuzz
-tesseract
+Tesseract
