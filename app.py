@@ -4,9 +4,9 @@ import numpy as np
 from PIL import Image
 import io
 import easyocr
-import requests
 import re
 from difflib import SequenceMatcher
+import os
 
 # Pagina-instellingen
 st.set_page_config(
@@ -29,29 +29,34 @@ def load_ocr_reader():
 
 reader = load_ocr_reader()
 
-# 2. Functie om logo's veilig te downloaden van GitHub
+# 2. Lokale logo's laden (stabieler dan GitHub)
 @st.cache_data
-def download_official_logos():
+def load_local_logos():
+    """Laad logo's lokaal in plaats van van GitHub"""
     logos = []
-    urls = [
-        "https://raw.githubusercontent.com/picazuid-pilot/CA-Drukwerk-Checker/main/logo1.png",
-        "https://raw.githubusercontent.com/picazuid-pilot/CA-Drukwerk-Checker/main/logo2.png"
-    ]
-    for url in urls:
+    
+    # Probeer lokale bestanden te laden
+    logo_paths = ["logo1.png", "logo2.png"]
+    
+    for path in logo_paths:
         try:
-            response = requests.get(url, timeout=5)
-            if response.status_code == 200:
-                img_bytes = np.frombuffer(response.content, dtype=np.uint8)
-                img = cv2.imdecode(img_bytes, cv2.IMREAD_GRAYSCALE)
+            if os.path.exists(path):
+                img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
                 if img is not None:
                     logos.append(img)
-        except Exception:
-            pass
+                    st.sidebar.write(f"✅ Logo geladen: {path} ({img.shape})")
+                else:
+                    st.sidebar.warning(f"⚠️ Kon logo niet laden: {path}")
+            else:
+                st.sidebar.warning(f"⚠️ Bestand niet gevonden: {path}")
+        except Exception as e:
+            st.sidebar.error(f"❌ Fout bij laden {path}: {e}")
+    
     return logos
 
-# Download logos (met fallback)
-logos = download_official_logos()
-st.sidebar.write(f"📦 Logo templates geladen: {len(logos)}")
+# Laad logo's
+logos = load_local_logos()
+st.sidebar.write(f"📦 Totaal logo's geladen: {len(logos)}")
 
 # 3. Helperfunctie voor tekstgelijkenis (Fuzzy Match)
 def similarity(a, b):
@@ -70,7 +75,7 @@ def word_similarity_score(word, text_list, threshold=0.70):
             return True
     return False
 
-# 4. Multi-Pass OCR voorbereiding (zonder destructieve threshold)
+# 4. Multi-Pass OCR voorbereiding
 def prepare_ocr_passes(image):
     """Genereert meerdere varianten voor Multi-Pass OCR"""
     passes = []
@@ -86,7 +91,7 @@ def prepare_ocr_passes(image):
         scaled = image.copy()
     passes.append(("opgeschaald", scaled))
     
-    # Pass 3: Lichte contrastverbetering (zonder destructieve threshold)
+    # Pass 3: Contrastverbetering (CLAHE)
     lab = cv2.cvtColor(scaled, cv2.COLOR_RGB2LAB)
     l, a, b = cv2.split(lab)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
@@ -244,7 +249,6 @@ if uploaded_file is not None:
                         plaatsen = ["hoorn", "amsterdam", "rotterdam", "utrecht", "haarlem", "den haag"]
                         for plaats in plaatsen:
                             if plaats in woorden_set or word_similarity_score(plaats, woorden_set, 0.75):
-                                # Check of "ca" ook in de buurt is
                                 if "ca" in woorden_set or any("ca" in w for w in woorden_set):
                                     ca_plaats = True
                                     st.success(f"✅ **Organisator gevonden (fuzzy):** CA {plaats.title()}")
@@ -333,7 +337,7 @@ if uploaded_file is not None:
                     import traceback
                     st.code(traceback.format_exc())
 
-        # ---- LOGO CHECK (ALLEEN FUZZY TEKST, GEEN TEMPLATE MATCHING) ----
+        # ---- LOGO CHECK ----
         st.markdown("### 🖼️ CA-Logo Controle")
         
         logo_gevonden = False
@@ -365,35 +369,36 @@ if uploaded_file is not None:
             logo_score += 1.0
             logo_methode.append("coca_anoniem")
         
-        # Methode 4: Template matching (alleen als fallback, met lage drempel)
+        # Methode 4: Template matching (alleen als fallback)
         if logos and logo_score < 2.0:
-            try:
-                for logo in logos:
-                    # Probeer verschillende thresholds en schalen
-                    for threshold in [0.40, 0.45, 0.50]:
-                        for scale in [1.0, 0.75, 0.5]:
-                            if scale != 1.0:
-                                h, w = logo.shape
-                                logo_scaled = cv2.resize(logo, (int(w*scale), int(h*scale)))
-                            else:
-                                logo_scaled = logo
-                            
-                            res = cv2.matchTemplate(img_gray_canvas, logo_scaled, cv2.TM_CCOEFF_NORMED)
-                            loc = np.where(res >= threshold)
-                            
-                            if len(loc[0]) > 0:
-                                h_s, w_s = logo_scaled.shape
-                                pt = (loc[1][0], loc[0][0])
-                                cv2.rectangle(img_canvas, pt, (pt[0] + w_s, pt[1] + h_s), (255, 0, 0), 5)
-                                logo_score += 1.5
-                                logo_methode.append("template")
+            with st.spinner("Zoeken naar CA-logo via template matching..."):
+                try:
+                    for logo in logos:
+                        # Probeer verschillende thresholds
+                        for threshold in [0.40, 0.45, 0.50]:
+                            for scale in [1.0, 0.75, 0.5]:
+                                if scale != 1.0:
+                                    h, w = logo.shape
+                                    logo_scaled = cv2.resize(logo, (int(w*scale), int(h*scale)))
+                                else:
+                                    logo_scaled = logo
+                                
+                                res = cv2.matchTemplate(img_gray_canvas, logo_scaled, cv2.TM_CCOEFF_NORMED)
+                                loc = np.where(res >= threshold)
+                                
+                                if len(loc[0]) > 0:
+                                    h_s, w_s = logo_scaled.shape
+                                    pt = (loc[1][0], loc[0][0])
+                                    cv2.rectangle(img_canvas, pt, (pt[0] + w_s, pt[1] + h_s), (255, 0, 0), 5)
+                                    logo_score += 1.5
+                                    logo_methode.append("template")
+                                    break
+                            if logo_score >= 1.5:
                                 break
                         if logo_score >= 1.5:
                             break
-                    if logo_score >= 1.5:
-                        break
-            except Exception as e:
-                st.warning(f"Template matching fallback error: {e}")
+                except Exception as e:
+                    st.warning(f"Template matching fallback error: {e}")
         
         # Eindbeoordeling
         if logo_score >= 3.0:
@@ -458,12 +463,12 @@ if uploaded_file is not None:
         
         if ruwe_regels_debug:
             with st.expander("🔧 Multi-Pass OCR Debug Log"):
-                for regel in ruwe_regels_debug[:50]:  # Max 50 regels voor overzicht
+                for regel in ruwe_regels_debug[:50]:
                     st.write(f"• {regel}")
                 if len(ruwe_regels_debug) > 50:
                     st.write(f"... en nog {len(ruwe_regels_debug)-50} regels")
 
-    # Sidebar met tijden en debug info
+    # Sidebar met debug info
     with st.sidebar:
         st.markdown("### 📊 Debug Info")
         st.write(f"Logo templates: {len(logos)}")
@@ -474,3 +479,27 @@ if uploaded_file is not None:
             st.markdown("### ⏰ Gedetecteerde tijden")
             for t in set(tijd_regels):
                 st.write(f"• `{t}`")
+else:
+    # Instructies als er geen bestand is geüpload
+    st.info("👆 Upload een flyer (JPG, JPEG, PNG) om te beginnen met de analyse.")
+    st.markdown("""
+    ### Wat wordt gecontroleerd?
+    
+    **🔴 Kritieke elementen:**
+    - CA-logo (herkenning via tekst + template matching)
+    - 6e traditie disclaimer
+    
+    **🏢 Evenementgegevens:**
+    - Organisator (CA + plaatsnaam)
+    - Evenementnaam/type
+    - Datum
+    - Tijd
+    - Locatie
+    
+    **📞 Contactgegevens:**
+    - Telefoonnummer
+    - E-mailadres
+    
+    **🌐 Online elementen:**
+    - Zoom/Meet/Teams link
+    """)
