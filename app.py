@@ -1,3 +1,15 @@
+import streamlit as st
+import cv2
+import numpy as np
+from PIL import Image
+import io
+import easyocr
+import requests
+import re
+
+# Vanaf hier mag pas je bestandsuploader of pagina-instelling komen:
+# uploaded_file = st.file_uploader("Upload hier de flyer (JPG, JPEG, PNG)", type=["jpg", "jpeg", "png"])
+
 # Bestandsuploader
 uploaded_file = st.file_uploader("Upload hier de flyer (JPG, JPEG, PNG)", type=["jpg", "jpeg", "png"])
 
