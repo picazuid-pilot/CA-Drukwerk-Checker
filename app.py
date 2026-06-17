@@ -153,7 +153,7 @@ if uploaded_file is not None:
                         txt_clean = txt_clean.replace("O", "0").replace("o", "0")
                         txt_clean = txt_clean.replace("juii", "juli").replace("juIi", "juli").replace("ju1i", "juli")
                         
-                        txt_clean = txt_clean.lower()
+                        txt_clean = txt_lower = txt_clean.lower()
                         txt_clean = txt_clean.replace("t0 t", "tot").replace("t0t", "tot")
                         
                         # Spaties binnen tijden herstellen
@@ -166,12 +166,12 @@ if uploaded_file is not None:
                         alle_teksten.append(txt_clean)
                         alle_losse_woorden.extend(txt_clean.split())
                         
-                        # Coördinaten en kaders
+                        # Coördinaten en kaders (GROEN voor normale tekst)
                         tl = tuple(map(int, bbox[0]))
                         br = tuple(map(int, bbox[2]))
                         cv2.rectangle(img_canvas, tl, br, (0, 255, 0), 2)
                         
-                        # Tijd regex
+                        # Tijd regex (BLAUW voor tijden)
                         tijd_matches = re.findall(r'\b\d{1,2}[:.;]?\d{2}\b', txt_clean)
                         if tijd_matches:
                             tijd_regels.append(txt_clean)
@@ -179,7 +179,7 @@ if uploaded_file is not None:
 
                     # Zet de hoofdstrings direct klaar
                     volledige_tekst = " ".join(alle_teksten)
-                    txt_lower = volledige_tekst.lower() # <-- Nu direct veilig gevuld!
+                    txt_lower = volledige_tekst.lower()
                     
                     st.markdown("---")
                     st.markdown("#### 📋 Matrix Checklist")
@@ -293,6 +293,7 @@ if uploaded_file is not None:
                             if len(loc[0]) > 0:
                                 h, w = logo.shape
                                 pt = (loc[1][0], loc[0][0])
+                                # RODE kaders voor gedetecteerde logo's
                                 cv2.rectangle(img_canvas, pt, (pt[0] + w, pt[1] + h), (255, 0, 0), 4)
                                 logo_score += 2.5
                                 break
@@ -360,4 +361,12 @@ if uploaded_file is not None:
             else:
                 st.write("ℹ️ Geen Zoom-link")
 
-# En vanaf hier pakt jouw bestaande `with col2:` de draad weer probleemloos op!
+    # =====================================================================
+    # HIER GING HET MIS: Kolom 2 openen en de live preview tonen!
+    # =====================================================================
+    with col2:
+        st.markdown("### 🖼️ Live Geannoteerde Preview")
+        st.caption("Gedetecteerde tekstregels zijn groen omkaderd, tijden/datums blauw/rood.")
+        
+        # Toon de bewerkte canvas-afbeelding waarin OpenCV de kaders heeft getekend
+        st.image(img_canvas, channels="RGB", use_container_width=True)
