@@ -16,9 +16,10 @@ st.set_page_config(
 )
 
 st.title("📋 C.A. Drukwerk Checker")
-st.subheader("Architectuur v3.0: OCR-Clustering & SIFT-Homografie Validatie")
+st.subheader("Architectuur v3.0: OCR-Clustering & Logo-Validatie")
 
 def word_similarity(w1, w2):
+    """Bereken gelijkenis tussen twee woorden"""
     return SequenceMatcher(None, w1.lower().strip(), w2.lower().strip()).ratio()
 
 @st.cache_resource
@@ -31,32 +32,8 @@ def load_ocr_reader():
 
 reader = load_ocr_reader()
 
-# Inladen van de referentielogo's met debug
-def load_reference_logos():
-    paths = {
-        "NL_BINNEN": "assets/logo_nl_inside.png",
-        "NL_BUITEN": "assets/logo_nl_outside.png",
-        "EN_BINNEN": "assets/logo_en_inside.png",
-        "EN_BUITEN": "assets/logo_en_outside.png"
-    }
-    loaded_logos = {}
-    
-    st.sidebar.write("### 🔍 Logo Loading Debug")
-    for key, path in paths.items():
-        if os.path.exists(path):
-            img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-            if img is not None:
-                loaded_logos[key] = img
-                st.sidebar.write(f"✅ {key}: {path} ({img.shape})")
-            else:
-                st.sidebar.error(f"❌ Kon niet lezen: {path}")
-        else:
-            st.sidebar.error(f"❌ Bestand niet gevonden: {path}")
-    
-    st.sidebar.write(f"**Totaal geladen: {len(loaded_logos)}**")
-    return loaded_logos
-
-ref_logos = load_reference_logos()
+# ---- GEEN SIFT MEER ----
+# We gebruiken alleen OCR voor logo-detectie
 
 uploaded_file = st.file_uploader("Upload hier de flyer (JPG, JPEG, PNG)", type=["jpg", "jpeg", "png"])
 
@@ -79,20 +56,22 @@ if uploaded_file is not None:
         st.markdown("### 🖼️ C.A. Logo Huisstijl Inspectie")
         
         # ---------------------------------------------------------------------
-        # STAP 1 & 2: MULTI-PASS OCR & HOOFD-SCAN
+        # MULTI-PASS OCR
         # ---------------------------------------------------------------------
         with st.spinner("Scannen van flyertekst en lokaliseren van logo-cluster..."):
             # Meerdere OCR-passes voor betere detectie
             img_enhanced = cv2.adaptiveThreshold(img_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
-            
-            # Ook een contrast-verbeterde versie
             img_contrast = cv2.equalizeHist(img_gray)
             
-            ocr_results = (
-                reader.readtext(img_np, detail=1) + 
-                reader.readtext(img_enhanced, detail=1) +
-                reader.readtext(img_contrast, detail=1)
-            )
+            try:
+                ocr_results = (
+                    reader.readtext(img_np, detail=1) + 
+                    reader.readtext(img_enhanced, detail=1) +
+                    reader.readtext(img_contrast, detail=1)
+                )
+            except Exception as e:
+                st.error(f"❌ OCR-fout: {e}")
+                ocr_results = []
             
             # Trefwoorden definities
             logo_keywords_nl = ["hoop", "vertrouwen", "moed"]
@@ -109,13 +88,15 @@ if uploaded_file is not None:
             nl_keyword_matches = set()
             en_keyword_matches = set()
             
-            # DEBUG: toon gevonden woorden
+            # DEBUG: toon gevonden woorden in sidebar
             st.sidebar.write("### 📝 OCR Debug")
             st.sidebar.write("**Gevonden tekstfragmenten:**")
+            ocr_count = 0
 
             for (bbox, text, prob) in ocr_results:
-                if prob < 0.20:  # Verlaagd van 0.25
+                if prob < 0.20:
                     continue
+                
                 txt_clean = text.replace("I", "1").replace("l", "1").replace("O", "0")
                 key = txt_clean.lower().strip()
                 
@@ -125,30 +106,32 @@ if uploaded_file is not None:
                 unieke_teksten.append(txt_clean)
                 
                 # Toon eerste 30 gevonden teksten in sidebar
-                if len(gevonden_keys) <= 30:
+                if ocr_count < 30:
                     st.sidebar.write(f"• `{txt_clean}`")
+                    ocr_count += 1
                 
                 woorden_in_regel = key.split()
                 alle_losse_woorden.extend(woorden_in_regel)
                 
-                # Check voor logo-baken woorden (NL & EN) met lagere threshold
+                # Check voor logo-baken woorden (NL & EN)
                 for kw in logo_keywords_nl:
                     if kw in key or any(word_similarity(kw, w) >= 0.65 for w in woorden_in_regel):
                         logo_bboxes.append(bbox)
                         nl_keyword_matches.add(kw)
-                        st.sidebar.write(f"  ✅ NL match: '{kw}'")
+                        st.sidebar.write(f"  ✅ NL match: '{kw}' in '{txt_clean}'")
                 for kw in logo_keywords_en:
                     if kw in key or any(word_similarity(kw, w) >= 0.65 for w in woorden_in_regel):
                         logo_bboxes.append(bbox)
                         en_keyword_matches.add(kw)
-                        st.sidebar.write(f"  ✅ EN match: '{kw}'")
+                        st.sidebar.write(f"  ✅ EN match: '{kw}' in '{txt_clean}'")
                         
                 # Check voor cross-fellowship sabotage
                 for skw in sabotage_keywords:
                     if skw in key or any(word_similarity(skw, w) >= 0.85 for w in woorden_in_regel):
                         sabotage_gevonden.add(skw)
+                        st.sidebar.write(f"  ⚠️ Sabotage: '{skw}' in '{txt_clean}'")
 
-                # Reguliere matrix-visualisatie (groen voor tekst, blauw voor tijd)
+                # Reguliere matrix-visualisatie
                 tl = tuple(map(int, bbox[0]))
                 br = tuple(map(int, bbox[2]))
                 cv2.rectangle(img_canvas, tl, br, (0, 255, 0), 1)
@@ -164,12 +147,36 @@ if uploaded_file is not None:
             st.sidebar.write(f"**EN logo matches: {len(en_keyword_matches)}**")
 
         # ---------------------------------------------------------------------
-        # STAP 3 & 4: CLUSTERING & DYNAMISCHE CROP
+        # LOGO CLUSTERING & VALIDATIE ZONDER SIFT
         # ---------------------------------------------------------------------
         best_crop = None
         logo_status = "MISSING"
         logo_taal = "ONBEKEND"
         
+        # Bepaal taal op basis van matches
+        if len(nl_keyword_matches) >= len(en_keyword_matches) and len(nl_keyword_matches) > 0:
+            logo_taal = "NL"
+        elif len(en_keyword_matches) > 0:
+            logo_taal = "EN"
+        
+        # Logo status op basis van tekstherkenning
+        if len(nl_keyword_matches) >= 2:
+            logo_status = "TEKST_HERKEND"
+            logo_score_final = 20
+        elif len(nl_keyword_matches) >= 1:
+            logo_status = "TEKST_GEDEELTELIJK"
+            logo_score_final = 10
+        elif len(en_keyword_matches) >= 2:
+            logo_status = "TEKST_HERKEND_EN"
+            logo_score_final = 20
+        elif len(en_keyword_matches) >= 1:
+            logo_status = "TEKST_GEDEELTELIJK_EN"
+            logo_score_final = 10
+        else:
+            logo_status = "MISSING"
+            logo_score_final = 0
+        
+        # Als er logo_bboxes zijn, teken de cluster
         if len(logo_bboxes) >= 1:
             all_pts = []
             for box in logo_bboxes:
@@ -179,9 +186,9 @@ if uploaded_file is not None:
             # Bereken de strakke bounding box
             x, y, w, h = cv2.boundingRect(np.array(all_pts))
             
-            # Uitbreiden met 300% voor betere SIFT-detectie
-            marge_x = int(w * 1.5) 
-            marge_y = int(h * 1.5)
+            # Uitbreiden met 200%
+            marge_x = int(w * 1.0) 
+            marge_y = int(h * 1.0)
             
             h_img, w_img = img_gray.shape
             ymin = max(0, y - marge_y)
@@ -189,110 +196,35 @@ if uploaded_file is not None:
             xmin = max(0, x - marge_x)
             xmax = min(w_img, x + w + marge_x)
             
-            # Verbeter contrast van de crop
             best_crop = img_gray[ymin:ymax, xmin:xmax]
-            best_crop = cv2.equalizeHist(best_crop)  # Contrast verbeteren
             
             # Teken de paarse cluster-box
             cv2.rectangle(img_canvas, (xmin, ymin), (xmax, ymax), (255, 0, 255), 3)
-            
-            st.sidebar.write(f"**Crop size:** {best_crop.shape}")
-        else:
-            st.sidebar.warning("⚠️ Geen logo-bakens gevonden in OCR!")
 
         # Toon de crop in de UI
         if best_crop is not None:
-            st.image(best_crop, caption="Dynamische crop voor SIFT-analyse", use_container_width=True)
-        else:
-            st.warning("⚠️ Geen crop gegenereerd - geen logo-bakens gevonden")
-
-        # ---------------------------------------------------------------------
-        # STAP 5 & 6: SIFT + HOMOGRAFIE VALIDATIE
-        # ---------------------------------------------------------------------
-        best_inlier_ratio = 0.0
-        logo_variant_detail = "ONBEKEND"
-        num_keypoints_crop = 0
-        
-        if best_crop is not None and len(ref_logos) > 0:
-            sift = cv2.SIFT_create()
-            kp_crop, des_crop = sift.detectAndCompute(best_crop, None)
-            
-            if des_crop is not None:
-                num_keypoints_crop = len(kp_crop)
-                st.sidebar.write(f"**SIFT keypoints in crop:** {num_keypoints_crop}")
-            else:
-                st.sidebar.warning("⚠️ Geen SIFT keypoints gevonden in crop!")
-            
-            if des_crop is not None and len(kp_crop) > 5:  # Verlaagd van 10
-                FLANN_INDEX_KDTREE = 1
-                index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
-                search_params = dict(checks=50)
-                flann = cv2.FlannBasedMatcher(index_params, search_params)
-                
-                for variant_naam, ref_gray in ref_logos.items():
-                    kp_ref, des_ref = sift.detectAndCompute(ref_gray, None)
-                    
-                    if des_ref is not None and len(kp_ref) > 5:
-                        matches = flann.knnMatch(des_ref, des_crop, k=2)
-                        
-                        good_matches = []
-                        for m, n in matches:
-                            if m.distance < 0.75 * n.distance:
-                                good_matches.append(m)
-                        
-                        st.sidebar.write(f"**{variant_naam}:** {len(good_matches)} goede matches")
-                        
-                        if len(good_matches) >= 10:  # Verlaagd van 15
-                            src_pts = np.float32([kp_ref[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-                            dst_pts = np.float32([kp_crop[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-                            
-                            H, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-                            
-                            if mask is not None:
-                                inliers = np.sum(mask)
-                                inlier_ratio = inliers / len(good_matches)
-                                
-                                if inlier_ratio > best_inlier_ratio and inliers >= 8:  # Verlaagd van 12
-                                    best_inlier_ratio = inlier_ratio
-                                    logo_variant_detail = variant_naam
-                                    st.sidebar.write(f"  ✅ Best match: {inlier_ratio:.2f}")
-                
-                if best_inlier_ratio >= 0.60:  # Verlaagd van 0.70
-                    logo_status = "OFFICIEEL"
-                elif best_inlier_ratio >= 0.30:  # Verlaagd van 0.40
-                    logo_status = "AANGEPAST"
-                else:
-                    if len(nl_keyword_matches) >= 2 or len(en_keyword_matches) >= 2:
-                        logo_status = "VERVORMD_OF_LAAG_CONTRAST"
-            else:
-                st.sidebar.warning("⚠️ Onvoldoende keypoints in crop voor SIFT-analyse!")
-
-        # Bepaal de taal op grond van de OCR-bakens
-        if len(nl_keyword_matches) >= len(en_keyword_matches) and len(nl_keyword_matches) > 0:
-            logo_taal = "NL"
-        elif len(en_keyword_matches) > 0:
-            logo_taal = "EN"
+            st.image(best_crop, caption="Dynamische crop van logo-cluster", use_container_width=True)
 
         # OUTPUT LOGO RAPPORTAGE
-        st.markdown("#### 📊 C.A. Logo Validatie Rapport (SIFT)")
+        st.markdown("#### 📊 C.A. Logo Validatie Rapport (OCR)")
         
-        if logo_status == "OFFICIEEL":
-            st.success(f"✅ **Officieel C.A.-Logo Gevalideerd!** Taal: **{logo_taal}** ({logo_variant_detail}).")
-            st.caption(f"📈 *Homografie RANSAC-inliers ratio = {best_inlier_ratio:.2f}*")
-            logo_score_final = 25
-        elif logo_status == "VERVORMD_OF_LAAG_CONTRAST":
-            st.warning(f"⚠️ **Logo-tekst herkend, maar structuurverificatie mislukt.**")
-            st.write(f"Gevonden woorden: {', '.join(nl_keyword_matches.union(en_keyword_matches))}")
-            st.write(f"SIFT keypoints in crop: {num_keypoints_crop}")
-            logo_score_final = 15
-        elif logo_status == "AANGEPAST":
-            st.error(f"❌ **Logo inhoudelijk bewerkt / Vervormd:** Homografie-matrix signaleert structuurwijzigingen.")
-            logo_score_final = 0
+        if logo_status == "TEKST_HERKEND" or logo_status == "TEKST_HERKEND_EN":
+            st.success(f"✅ **C.A.-Logo herkend!** Taal: **{logo_taal}**")
+            st.caption(f"Gevonden woorden: {', '.join(nl_keyword_matches.union(en_keyword_matches))}")
+        elif logo_status == "TEKST_GEDEELTELIJK" or logo_status == "TEKST_GEDEELTELIJK_EN":
+            st.warning(f"⚠️ **Logo gedeeltelijk herkend** - Taal: **{logo_taal}**")
+            st.write(f"Gevonden: {', '.join(nl_keyword_matches.union(en_keyword_matches))}")
+            st.write("Er zijn niet alle logo-teksten ('hoop', 'vertrouwen', 'moed') gevonden. Dit kan komen door:")
+            st.write("- Laag contrast van de tekst")
+            st.write("- OCR die cirkeltekst niet goed leest")
+            st.write("- Kleine lettergrootte")
         else:
-            st.error("❌ **Kritiek Matrix-element mist:** Geen C.A. baken-woorden of logo-structuren aangetroffen.")
-            st.write(f"Gevonden NL woorden: {nl_keyword_matches}")
-            st.write(f"Gevonden EN woorden: {en_keyword_matches}")
-            logo_score_final = 0
+            st.error("❌ **Kritiek Matrix-element mist:** Geen C.A. baken-woorden aangetroffen.")
+            st.write("De logo-teksten 'hoop', 'vertrouwen', 'moed' zijn niet herkend in de OCR.")
+            st.write("Tips voor een betere scan:")
+            st.write("- Gebruik een hogere resolutie afbeelding")
+            st.write("- Zorg voor voldoende contrast")
+            st.write("- Vermijd tekst over afbeeldingen")
 
         # ---------------------------------------------------------------------
         # RESTERENDE INHOUDELIJKE TEXT MATRIX
@@ -310,9 +242,10 @@ if uploaded_file is not None:
         traditie_ok = traditie_score >= 3
 
         if traditie_ok:
-            st.success(f"✅ **6e Traditie Disclaimer aanwezig** ({traditie_score}/6)")
+            st.success(f"✅ **6e Traditie Disclaimer aanwezig** ({traditie_score}/6 sterke woorden)")
         else:
-            st.error(f"❌ **6e Traditie Disclaimer incompleet** ({traditie_score}/6)")
+            st.error(f"❌ **6e Traditie Disclaimer incompleet** ({traditie_score}/6 sterke woorden)")
+            st.write(f"Gevonden woorden uit de disclaimer: {', '.join([kw for kw in sterke_keywords if any(word_similarity(kw, w) >= 0.80 for w in alle_losse_woorden)])}")
 
         # Groepsnaam / Organisator
         organisator_match = re.search(r'ca[\s\-]+[a-z0-9]+', volledige_tekst, re.IGNORECASE)
@@ -323,17 +256,26 @@ if uploaded_file is not None:
         datum_match = re.search(rf'(\d+[-/]\d+[-/]\d+|\d+\s+({maanden}))', volledige_tekst, re.IGNORECASE)
         datum_gevonden = True if datum_match else False
         tijd_gevonden = len(tijd_regels) >= 1
-        locatie_gevonden = ("stadsstrand" in txt_lower) or ("hoorn" in txt_lower)
+        locatie_gevonden = ("stadsstrand" in txt_lower) or ("hoorn" in txt_lower) or ("strand" in txt_lower)
         
         tel_pattern = r'(\+31\s?6|06)[-\s]?\d{2}[-\s]?\d{2}[-\s]?\d{2}[-\s]?\d{2}'
         telefoon_gevonden = True if re.search(tel_pattern, volledige_tekst) else False
 
         # Scores toekennen
         if organisator_gevonden: st.success(f"✅ **Organisator herleid uit tekst**")
+        else: st.warning("⚠️ **Geen organisator gevonden** (bijv. 'CA Hoorn')")
+        
         if datum_gevonden: st.success(f"✅ **Datum herleid uit tekst**")
+        else: st.warning("⚠️ **Geen datum gevonden**")
+        
         if tijd_gevonden: st.success(f"✅ **Tijdstip herleid uit tekst**")
+        else: st.warning("⚠️ **Geen tijd gevonden**")
+        
         if locatie_gevonden: st.success("✅ **Locatie succesvol herleid**")
+        else: st.warning("⚠️ **Geen locatie gevonden**")
+        
         if telefoon_gevonden: st.success(f"📞 **Telefoonnummer aanwezig**")
+        else: st.info("ℹ️ **Geen telefoonnummer gevonden**")
 
         # TOTAL SCORE CALCULATOR
         st.markdown("---")
@@ -358,5 +300,18 @@ if uploaded_file is not None:
 
     with col2:
         st.markdown("### 🖼️ Live Visuele Analyse")
-        st.caption("Paarse box = Dynamisch berekend OCR-baken-cluster voor SIFT-analyse")
+        st.caption("🟢 Groen = Tekstvlakken | 🔵 Blauw = Tijd | 🟣 Paars = Logo-cluster")
         st.image(img_canvas, channels="RGB", use_container_width=True)
+        
+        # Toon gevonden tekst in expander
+        if volledige_tekst:
+            with st.expander("📝 Volledige OCR-tekst"):
+                st.write(volledige_tekst)
+        
+        # Toon alle gevonden woorden
+        if alle_losse_woorden:
+            with st.expander("🔍 Alle gevonden woorden"):
+                st.write(", ".join(set(alle_losse_woorden[:100])))
+else:
+    # Instructies
+    st.info("👆 Upload een flyer om te beginnen met de analyse.")
