@@ -36,7 +36,6 @@ def download_official_logos():
         "https://raw.githubusercontent.com/picazuid-pilot/CA-Drukwerk-Checker/main/logo1.png",
         "https://raw.githubusercontent.com/picazuid-pilot/CA-Drukwerk-Checker/main/logo2.png"
     ]
-    
     for url in urls:
         try:
             response = requests.get(url, timeout=5)
@@ -70,7 +69,7 @@ if uploaded_file is not None:
 
     st.success("✅ Bestand succesvol geüpload. Analyse start...")
 
-    # Kolommen opzetten: Links de checklist, Rechts het visuele voorbeeldscherm met omlijningen
+    # Twee kolommen: links de resultaten/checks, rechts het voorbeeldscherm met kaders
     col1, col2 = st.columns([1, 1])
 
     with col1:
@@ -80,53 +79,79 @@ if uploaded_file is not None:
             st.error("OCR is niet beschikbaar.")
             volledige_tekst = ""
         else:
-            with st.spinner("Tekst scannen en omlijnen..."):
+            with st.spinner("Tekst scannen en analyseren..."):
                 try:
-                    # detail=1 geeft ook de coördinaten van de tekst terug voor het omlijnen
                     ocr_results = reader.readtext(img_np, detail=1)
                     
                     alle_teksten = []
+                    tijd_blokken = []
+                    
                     for (bbox, text, prob) in ocr_results:
-                        alle_teksten.append(text)
+                        # Tekst opschonen: zet de letter 'O' om naar een nul '0' voor cijferfouten
+                        # En corrigeer veelvoorkomende OCR-fouten in datums/tijden (zoals juii -> juli)
+                        txt_clean = text.replace("O", "0").replace("o", "0")
+                        txt_clean = txt_clean.replace("juii", "juli").replace("juIi", "juli").replace("ju1i", "juli")
                         
-                        # Coördinaten uitpakken voor OpenCV (top-left en bottom-right)
+                        alle_teksten.append(txt_clean)
+                        
+                        # Coördinaten uitpakken voor het voorbeeldscherm
                         tl = tuple(map(int, bbox[0]))
                         br = tuple(map(int, bbox[2]))
                         
-                        # Teken een GROEN kader om elk gedetecteerd tekstblok
+                        # Teken ALVAST een standaard groen kader om elk gedetecteerd tekstblok
                         cv2.rectangle(img_canvas, tl, br, (0, 255, 0), 2)
-                    
+                        
+                        # Scan dit specifieke blok direct op een losse tijd (bijv "12:00" of "18.00")
+                        tijd_matches = re.findall(r'\b\d{1,2}[:.]\d{2}\b', txt_clean)
+                        if tijd_matches:
+                            tijd_blokken.extend(tijd_matches)
+                            # Geef tijdsblokken een extra dik blauw kader op het voorbeeldscherm
+                            cv2.rectangle(img_canvas, tl, br, (255, 0, 0), 3)
+
+                    # Voeg alles samen voor de lopende tekst-checks
                     volledige_tekst = " ".join(alle_teksten)
                     
-                    # --- CONTROLES OP BASIS VAN TEKST ---
-                    # 1. Organisator
+                    # --- 1. ORGANISATOR CHECK ---
                     organisator_match = re.search(r'(CA\s+[A-Za-z]+|Cocaine\s+Anonymous\s+[A-Za-z]+)', volledige_tekst, re.IGNORECASE)
                     if organisator_match:
                         st.success(f"✅ **Organisator gevonden:** {organisator_match.group(0)}")
                     else:
                         st.warning("⚠️ **Geen specifieke CA-groep herkend** (bijv. 'CA Hoorn')")
 
-                    # 2. Datum & Tijd
+                    # --- 2. DATUM CHECK ---
                     maanden = "januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december|jan|feb|mrt|apr|jun|jul|aug|sep|okt|nov|dec"
                     datum_match = re.search(rf'(\d+[-/]\d+[-/]\d+|\d+\s+({maanden}))', volledige_tekst, re.IGNORECASE)
-                    tijd_match = re.search(r'(\d{2}[:.]\d{2})\s*(tot|u|uur)?\s*(\d{2}[:.]\d{2})?', volledige_tekst, re.IGNORECASE)
-                    
-                    if datum_match: st.success(f"✅ **Datum gevonden:** {datum_match.group(0)}")
-                    else: st.warning("⚠️ **Geen datum gevonden**")
-                        
-                    if tijd_match: st.success(f"✅ **Tijd gevonden:** {tijd_match.group(0)}")
-                    else: st.warning("⚠️ **Geen tijdstip gevonden**")
-
-                    # 3. Telefoonnummer
-                    telefoon_match = re.search(r'(06[- ]*\d{8}|\+31[- ]*6[- ]*\d{8})', volledige_tekst)
-                    if telefoon_match: st.success(f"✅ **Telefoonnummer gevonden:** {telefoon_match.group(0)}")
-                    else: st.warning("⚠️ **Geen telefoonnummer gevonden**")
-
-                    # 4. 6e Traditie
-                    if any(w in volledige_tekst.lower() for w in ["6e traditie", "traditie", "niet verbonden aan"]):
-                        st.success("✅ **6e traditie aanwezig:** Disclaimer gedetecteerd.")
+                    if datum_match:
+                        st.success(f"✅ **Datum gevonden:** {datum_match.group(0)}")
                     else:
-                        st.error("❌ **6e traditie ontbreekt of onleesbaar!**")
+                        st.warning("⚠️ **Geen datum gevonden** (Let op spelling van de maand)")
+
+                    # --- 3. ROBUUSTE TIJD CHECK ---
+                    # We controleren eerst of we een van/tot bereik in de lopende tekst zien
+                    bereik_match = re.search(r'\b\d{1,2}[:.]\d{2}\s*(tot|-|t/m)\s*\d{1,2}[:.]\d{2}\b', volledige_tekst, re.IGNORECASE)
+                    
+                    if bereik_match:
+                        st.success(f"✅ **Tijdsbereik gevonden:** {bereik_match.group(0)}")
+                    elif len(tijd_blokken) >= 2:
+                        # Als 'tot' in een los blok stond, pakken we de eerste twee gevonden tijdstippen
+                        st.success(f"✅ **Tijdsbereik gevonden (uit losse blokken):** {tijd_blokken[0]} tot {tijd_blokken[1]}")
+                    elif len(tijd_blokken) == 1:
+                        st.info(f"ℹ️ **Enkele tijd gevonden:** {tijd_blokken[0]} (Geen eindtijd gedetecteerd)")
+                    else:
+                        st.warning("⚠️ **Geen tijdstip of tijdsbereik gevonden**")
+
+                    # --- 4. TELEFOONNUMMER CHECK ---
+                    telefoon_match = re.search(r'(06[- ]*\d{8}|\+31[- ]*6[- ]*\d{8})', volledige_tekst)
+                    if telefoon_match:
+                        st.success(f"✅ **Telefoonnummer gevonden:** {telefoon_match.group(0)}")
+                    else:
+                        st.warning("⚠️ **Geen telefoonnummer gevonden**")
+
+                    # --- 5. 6E TRADITIE CHECK ---
+                    if any(w in volledige_tekst.lower() for w in ["6e traditie", "traditie", "niet verbonden aan", "kerken"]):
+                        st.success("✅ **6e traditie aanwezig:** Disclaimer succesvol gedetecteerd.")
+                    else:
+                        st.error("❌ **6e traditie ontbreekt of is onleesbaar:** Denk aan de verplichte CA-disclaimer!")
 
                 except Exception as ocr_error:
                     st.error(f"❌ Fout tijdens OCR-analyse: {ocr_error}")
@@ -140,31 +165,32 @@ if uploaded_file is not None:
                 try:
                     for logo in logos:
                         res = cv2.matchTemplate(img_gray, logo, cv2.TM_CCOEFF_NORMED)
-                        threshold = 0.7
+                        threshold = 0.65  # Iets soepeler gezet voor betere herkenning
                         loc = np.where(res >= threshold)
                         
-                        # Als er een match is, neem de eerste locatie en omlijn deze
                         if len(loc[0]) > 0:
                             h, w = logo.shape
                             pt = (loc[1][0], loc[0][0])
-                            # Teken een BLAUW kader om het gevonden logo
-                            cv2.rectangle(img_canvas, pt, (pt[0] + w, pt[1] + h), (255, 0, 0), 3)
+                            # Teken een DIK BLAUW kader om het logo op het voorbeeldscherm
+                            cv2.rectangle(img_canvas, pt, (pt[0] + w, pt[1] + h), (255, 0, 0), 4)
                             logo_gevonden = True
                             break
                     
-                    if logo_gevonden: st.success("✅ **CA-logo aanwezig**")
-                    else: st.warning("⚠️ **Geen officieel CA-logo herkend**")
+                    if logo_gevonden:
+                        st.success("✅ **CA-logo aanwezig**")
+                    else:
+                        st.warning("⚠️ **Geen officieel CA-logo herkend**")
                 except Exception as logo_err:
                     st.error(f"Fout bij logo-scan: {logo_err}")
 
-    # RECHTERKOLOM: Het visuele voorbeeldscherm met de omlijningen
+    # RECHTERKOLOM: Het visuele voorbeeldscherm met de live omlijningen
     with col2:
         st.markdown("### 🖼️ Voorbeeldscherm (Gedetecteerde Elementen)")
-        st.caption("🟢 Groen = Gedetecteerde tekstblokken | 🔵 Blauw = Gevonden CA-Logo")
+        st.caption("🟢 Groen = Alle tekstblokken | 🔵 Blauw = Gedetecteerde Tijden / CA-Logo")
         
-        # Toon de bewerkte afbeelding met de getekende kaders
-        st.image(img_canvas, use_column_width=True, caption="Flyer met visuele omlijning van de checker")
+        # Toon de bewerkte afbeelding met alle kaders netjes over elkaar heen
+        st.image(img_canvas, use_column_width=True, caption="Interactief voorbeeldscherm van de matrix-analyse")
         
         if volledige_tekst:
-            with st.expander("Bekijk ruwe gedetecteerde tekst"):
+            with st.expander("Bekijk opgeschoonde gedetecteerde tekst (ruw)"):
                 st.write(volledige_tekst)
