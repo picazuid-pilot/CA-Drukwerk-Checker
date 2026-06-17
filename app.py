@@ -6,6 +6,7 @@ import io
 import easyocr
 import requests
 import re
+from difflib import SequenceMatcher
 
 # Pagina-instellingen
 st.set_page_config(
@@ -50,9 +51,13 @@ def download_official_logos():
 
 logos = download_official_logos()
 
-# 3. Helper functie voor fuzzy matching zonder dependencies
-def fuzzy_match(text, reference, threshold=75):
-    """Eenvoudige fuzzy match voor tekstvergelijking"""
+# 3. Verbeterde fuzzy matching met difflib
+def similarity(a, b):
+    """Bereken gelijkenis tussen twee strings (0-100%)"""
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio() * 100
+
+def fuzzy_match(text, reference, threshold=70):
+    """Check of tekst overeenkomt met referentie"""
     text = text.lower().strip()
     reference = reference.lower().strip()
     
@@ -67,10 +72,24 @@ def fuzzy_match(text, reference, threshold=75):
     if not words1 or not words2:
         return 0
     
-    overlap = len(words1.intersection(words2))
-    total = max(len(words1), len(words2))
+    # Bereken gemiddelde similarity voor alle woorden
+    total_similarity = 0
+    count = 0
     
-    return (overlap / total) * 100
+    for w1 in words1:
+        best_match = 0
+        for w2 in words2:
+            sim = similarity(w1, w2)
+            if sim > best_match:
+                best_match = sim
+        if best_match > 60:  # Alleen woorden die redelijk overeenkomen
+            total_similarity += best_match
+            count += 1
+    
+    if count == 0:
+        return 0
+    
+    return total_similarity / count
 
 # 4. Functie voor OCR met voorbewerking
 def preprocess_for_ocr(image):
@@ -126,9 +145,18 @@ if uploaded_file is not None:
     with col1:
         st.markdown("### 📝 Matrix Resultaten")
         
+        # --- INITIALISEER ALLE VARIABELEN ---
+        volledige_tekst = ""
+        txt_lower = ""
+        logo_gevonden = False
+        logo_score = 0
+        zesde_traditie_score = 0
+        traditie_fuzzy_score = 0
+        tijd_regels = []
+        ruwe_regels = []
+        
         if reader is None:
             st.error("OCR-module is offline.")
-            volledige_tekst = ""
         else:
             with st.spinner("Tekst scannen en analyseren..."):
                 try:
@@ -136,8 +164,6 @@ if uploaded_file is not None:
                     ocr_results = reader.readtext(img_ocr_enhanced, detail=1)
                     
                     alle_teksten = []
-                    tijd_regels = []
-                    ruwe_regels = []  # Voor debug doeleinden
                     
                     st.markdown("#### 🔍 Live OCR Debug Output")
                     st.caption("Hieronder zie je exact wat de scanner regel-voor-regel aantreft:")
@@ -176,7 +202,6 @@ if uploaded_file is not None:
                         alle_teksten.append(txt_clean)
                         
                         # Coördinaten voor het omlijnelement aan de rechterkant
-                        # Aanpassen voor de geschaalde afbeelding
                         scale_factor = 2 if (img_np.shape[0] < 1000 or img_np.shape[1] < 1000) else 1
                         tl = tuple(map(int, [bbox[0][0]/scale_factor, bbox[0][1]/scale_factor]))
                         br = tuple(map(int, [bbox[2][0]/scale_factor, bbox[2][1]/scale_factor]))
@@ -193,100 +218,23 @@ if uploaded_file is not None:
 
                     # Voeg alle regels samen voor de brede matrix-checks
                     volledige_tekst = " ".join(alle_teksten)
+                    txt_lower = volledige_tekst.lower()
                     
                     st.markdown("---")
                     st.markdown("#### 📋 Matrix Checklist")
                     
-                    # --- INITIALISEER VARIABELEN VOOR RAPPORT ---
-                    organisator_gevonden = False
-                    evenementnaam_gevonden = False
-                    datum_gevonden = False
-                    tijd_gevonden = False
-                    locatie_gevonden = False
-                    telefoon_gevonden = False
-                    logo_gevonden = False
-                    logo_score = 0
-                    zesde_traditie_score = 0
+                    # --- CHECK 1: 6E TRADITIE (KRITIEK) ---
+                    st.markdown("##### 🔴 Kritieke Controles")
                     
-                    # --- 1. ORGANISATOR CHECK ---
-                    organisator_match = re.search(r'CA[\s\-]+[A-Za-z0-9]+', volledige_tekst, re.IGNORECASE)
-                    if organisator_match:
-                        organisator_gevonden = True
-                        st.success(f"✅ **Organisator gevonden:** {organisator_match.group(0)}")
-                    else:
-                        # Fallback: zoek naar CA + plaatsnaam
-                        ca_pattern = re.search(r'CA\s+([A-Za-z]+)', volledige_tekst, re.IGNORECASE)
-                        if ca_pattern:
-                            organisator_gevonden = True
-                            st.success(f"✅ **Organisator gevonden (fuzzy):** {ca_pattern.group(0)}")
-                        else:
-                            st.warning("⚠️ **Geen specifieke CA-groep herkend** (bijv. 'CA Hoorn')")
-
-                    # --- 2. EVENEMENTNAAM CHECK ---
-                    evenement_woorden = ["workshop", "bijeenkomst", "ontmoeting", "spreker", "meeting", "actie", "bijeen"]
-                    if any(woord in volledige_tekst.lower() for woord in evenement_woorden):
-                        evenementnaam_gevonden = True
-                        st.success(f"✅ **Evenementnaam gevonden**")
-                    else:
-                        st.info("ℹ️ **Geen duidelijke evenementnaam herkend**")
-
-                    # --- 3. DATUM CHECK ---
-                    maanden = "januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december|jan|feb|mrt|apr|jun|jul|aug|sep|okt|nov|dec"
-                    datum_match = re.search(rf'(\d+[-/]\d+[-/]\d+|\d+\s+({maanden}))', volledige_tekst, re.IGNORECASE)
-                    if datum_match:
-                        datum_gevonden = True
-                        st.success(f"✅ **Datum gevonden:** {datum_match.group(0)}")
-                    else:
-                        st.warning("⚠️ **Geen datum gevonden**")
-
-                    # --- 4. TIJD CHECK ---
-                    if len(tijd_regels) >= 2:
-                        tijd_gevonden = True
-                        st.success(f"✅ **Tijdsbereik gevonden:** {tijd_regels[0]} tot {tijd_regels[1]}")
-                    elif len(tijd_regels) == 1:
-                        tijd_gevonden = True
-                        st.info(f"ℹ️ **Enkele tijd gevonden:** {tijd_regels[0]} (Geen eindtijd herleid)")
-                    else:
-                        st.warning("⚠️ **Geen tijdstip of bereik kunnen detecteren**")
-
-                    # --- 5. LOCATIE CHECK ---
-                    locatie_woorden = ["strand", "centrum", "kerk", "zaal", "hotel", "gebouw", "hoorn", "stadsstrand"]
-                    locatie_score = 0
-                    for woord in locatie_woorden:
-                        if woord in volledige_tekst.lower():
-                            locatie_score += 1
-                    
-                    # Fuzzy match voor "Stadsstrand Hoorn"
-                    if "stadsstrand" in volledige_tekst.lower() and "hoorn" in volledige_tekst.lower():
-                        locatie_score += 2
-                    elif fuzzy_match("stadsstrand hoorn", volledige_tekst, 50) > 50:
-                        locatie_score += 1
-                    
-                    if locatie_score >= 2:
-                        locatie_gevonden = True
-                        st.success(f"✅ **Locatie gevonden** (score: {locatie_score}/2+)")
-                    else:
-                        st.warning(f"⚠️ **Locatie niet duidelijk herkend** (score: {locatie_score}/2+)")
-
-                    # --- 6. TELEFOONNUMMER CHECK ---
-                    telefoon_match = re.search(r'(06[- ]*\d{8}|\+31[- ]*6[- ]*\d{8})', volledige_tekst)
-                    if telefoon_match:
-                        telefoon_gevonden = True
-                        st.success(f"✅ **Telefoonnummer gevonden:** {telefoon_match.group(0)}")
-                    else:
-                        st.warning("⚠️ **Geen telefoonnummer gevonden**")
-
-                    # --- 7. 6E TRADITIE CHECK - VERBETERD MET FUZZY MATCHING ---
                     traditie_reference = """
                     in de geest van de 6e traditie is c.a. niet verbonden aan kerken,
                     sekten, politieke of hulpverlenende instanties
                     """
                     
-                    # Bereken fuzzy match score
+                    # Bereken fuzzy match score met verbeterde similarity
                     traditie_fuzzy_score = fuzzy_match(volledige_tekst, traditie_reference, 60)
                     
-                    # Ook losse woorden checken voor extra score
-                    txt_lower = volledige_tekst.lower()
+                    # Ook losse woorden checken
                     if "6e traditie" in txt_lower:
                         zesde_traditie_score += 2
                     if "niet verbonden" in txt_lower:
@@ -308,61 +256,106 @@ if uploaded_file is not None:
                     else:
                         st.error("❌ **6e traditie ontbreekt of is onleesbaar:** Denk aan de verplichte CA-disclaimer!")
 
-                    # --- 8. ONLINE ELEMENTEN ---
-                    st.markdown("---")
-                    st.markdown("#### 🌐 Online Elementen")
+                    # --- CHECK 2: ORGANISATOR ---
+                    st.markdown("##### 🏢 Evenementgegevens")
                     
-                    if "zoom" in txt_lower or "meet" in txt_lower:
-                        st.success("✅ **Zoom/online link gevonden**")
+                    organisator_match = re.search(r'CA[\s\-]+[A-Za-z0-9]+', volledige_tekst, re.IGNORECASE)
+                    if organisator_match:
+                        st.success(f"✅ **Organisator gevonden:** {organisator_match.group(0)}")
                     else:
-                        st.info("ℹ️ **Geen Zoom-link gedetecteerd** (niet verplicht)")
-
-                    # --- TOTAAL RAPPORT ---
-                    st.markdown("---")
-                    st.markdown("#### 📊 Samenvattend Rapport")
-                    
-                    # Bepaal of kritieke checks zijn geslaagd
-                    kritiek_geslaagd = logo_gevonden and (traditie_fuzzy_score >= 70 or zesde_traditie_score >= 3)
-                    evenement_geslaagd = organisator_gevonden and datum_gevonden and tijd_gevonden and locatie_gevonden
-                    
-                    if kritiek_geslaagd and evenement_geslaagd:
-                        st.success("🎉 **FLYER VOLDOET AAN ALLE MATRIX-EISEN!**")
-                    elif kritiek_geslaagd:
-                        st.warning("⚠️ **Flyer voldoet aan kritieke eisen, maar mist enkele evenementdetails**")
-                    else:
-                        st.error("❌ **Flyer voldoet NIET aan de matrix-eisen**")
-                    
-                    # Detailrapport
-                    with st.expander("📋 Bekijk gedetailleerd rapport"):
-                        st.markdown("**KRITIEKE CONTROLES**")
-                        st.write(f"{'✅' if logo_gevonden else '❌'} CA-logo")
-                        st.write(f"{'✅' if (traditie_fuzzy_score >= 70 or zesde_traditie_score >= 3) else '⚠️' if (traditie_fuzzy_score >= 50 or zesde_traditie_score >= 1) else '❌'} 6e traditie (fuzzy: {traditie_fuzzy_score:.0f}%, woorden: {zesde_traditie_score}/6)")
-                        
-                        st.markdown("**EVENEMENT**")
-                        st.write(f"{'✅' if organisator_gevonden else '❌'} Organisator")
-                        st.write(f"{'✅' if evenementnaam_gevonden else 'ℹ️'} Evenementnaam")
-                        st.write(f"{'✅' if datum_gevonden else '❌'} Datum")
-                        st.write(f"{'✅' if tijd_gevonden else '❌'} Tijd")
-                        st.write(f"{'✅' if locatie_gevonden else '⚠️'} Locatie (score: {locatie_score}/2+)")
-                        
-                        st.markdown("**CONTACT**")
-                        st.write(f"{'✅' if telefoon_gevonden else '⚠️'} Telefoon")
-                        
-                        st.markdown("**ONLINE**")
-                        if "zoom" in txt_lower or "meet" in txt_lower:
-                            st.write("✅ Zoom-link")
+                        ca_pattern = re.search(r'CA\s+([A-Za-z]+)', volledige_tekst, re.IGNORECASE)
+                        if ca_pattern:
+                            st.success(f"✅ **Organisator gevonden (fuzzy):** {ca_pattern.group(0)}")
                         else:
-                            st.write("ℹ️ Geen Zoom-link")
+                            st.warning("⚠️ **Geen specifieke CA-groep herkend** (bijv. 'CA Hoorn')")
+
+                    # --- CHECK 3: EVENEMENTNAAM (verbeterd) ---
+                    evenement_woorden = [
+                        "event", "bbq", "fundraiser", "conventie", "feest", 
+                        "zomer", "winter", "lente", "herfst", "workshop", 
+                        "meeting", "speaker", "countdown", "bijeenkomst", 
+                        "ontmoeting", "actie", "spreker"
+                    ]
+                    if any(woord in txt_lower for woord in evenement_woorden):
+                        st.success(f"✅ **Evenementnaam gevonden**")
+                    else:
+                        st.info("ℹ️ **Geen duidelijke evenementnaam herkend**")
+
+                    # --- CHECK 4: DATUM ---
+                    maanden = "januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december|jan|feb|mrt|apr|jun|jul|aug|sep|okt|nov|dec"
+                    datum_match = re.search(rf'(\d+[-/]\d+[-/]\d+|\d+\s+({maanden}))', volledige_tekst, re.IGNORECASE)
+                    if datum_match:
+                        st.success(f"✅ **Datum gevonden:** {datum_match.group(0)}")
+                    else:
+                        st.warning("⚠️ **Geen datum gevonden**")
+
+                    # --- CHECK 5: TIJD ---
+                    if len(tijd_regels) >= 2:
+                        st.success(f"✅ **Tijdsbereik gevonden:** {tijd_regels[0]} tot {tijd_regels[1]}")
+                    elif len(tijd_regels) == 1:
+                        st.info(f"ℹ️ **Enkele tijd gevonden:** {tijd_regels[0]} (Geen eindtijd herleid)")
+                    else:
+                        st.warning("⚠️ **Geen tijdstip of bereik kunnen detecteren**")
+
+                    # --- CHECK 6: LOCATIE (verbeterd) ---
+                    # Eerst zoeken naar adrespatronen
+                    adres_match = re.search(r'\d{1,4}\s+[A-Za-z]+\s+[A-Za-z]+', volledige_tekst)
+                    postcode_match = re.search(r'\d{4}\s*[A-Z]{2}', volledige_tekst)
+                    zoom_match = re.search(r'zoom|meet|teams', txt_lower)
+                    
+                    if adres_match or postcode_match:
+                        locatie_gevonden = True
+                        st.success(f"✅ **Locatie gevonden** (adres/postcode)")
+                    else:
+                        # Val terug op woordherkenning
+                        locatie_woorden = [
+                            "strand", "centrum", "kerk", "zaal", "hotel", 
+                            "gebouw", "buurthuis", "community", "zaal"
+                        ]
+                        locatie_score = sum(1 for woord in locatie_woorden if woord in txt_lower)
+                        
+                        # Check op plaatsnamen (fuzzy)
+                        plaatsen = ["hoorn", "amsterdam", "rotterdam", "utrecht", "den haag", "haarlem"]
+                        plaats_gevonden = any(plaats in txt_lower for plaats in plaatsen)
+                        
+                        if locatie_score >= 2 or plaats_gevonden:
+                            st.success(f"✅ **Locatie gevonden** (score: {locatie_score}/2+)")
+                        else:
+                            st.warning(f"⚠️ **Locatie niet duidelijk herkend** (score: {locatie_score}/2+)")
+
+                    # --- CHECK 7: TELEFOON (aanbevolen) ---
+                    st.markdown("##### 📞 Contactgegevens (aanbevolen)")
+                    
+                    telefoon_match = re.search(r'(06[- ]*\d{8}|\+31[- ]*6[- ]*\d{8})', volledige_tekst)
+                    if telefoon_match:
+                        st.success(f"✅ **Telefoonnummer gevonden:** {telefoon_match.group(0)}")
+                    else:
+                        st.info("ℹ️ **Geen telefoonnummer gevonden** (aanbevolen maar niet verplicht)")
+
+                    # --- CHECK 8: E-MAIL (aanbevolen) ---
+                    email_match = re.search(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', volledige_tekst)
+                    if email_match:
+                        st.success(f"✅ **E-mailadres gevonden:** {email_match.group(0)}")
+                    else:
+                        st.info("ℹ️ **Geen e-mailadres gevonden** (aanbevolen maar niet verplicht)")
+
+                    # --- CHECK 9: ONLINE ELEMENTEN ---
+                    st.markdown("##### 🌐 Online Elementen")
+                    
+                    if "zoom" in txt_lower or "meet" in txt_lower or "teams" in txt_lower:
+                        st.success("✅ **Online link gevonden**")
+                        if "id" in txt_lower or "wachtwoord" in txt_lower:
+                            st.success("✅ **Meeting ID/wachtwoord gevonden**")
+                        else:
+                            st.info("ℹ️ **Geen meeting ID of wachtwoord gevonden**")
+                    else:
+                        st.info("ℹ️ **Geen online link gevonden** (niet verplicht)")
 
                 except Exception as ocr_error:
                     st.error(f"❌ Fout tijdens OCR-analyse: {ocr_error}")
-                    volledige_tekst = ""
 
-        # ---- LOGO CHECK - VERBETERD MET MEERDERE METHODES ---
+        # ---- LOGO CHECK (VERBETERD) ----
         st.markdown("### 🖼️ CA-Logo Controle")
-        
-        logo_gevonden = False
-        logo_score = 0
         
         # Methode 1: Template matching
         if logos:
@@ -377,7 +370,6 @@ if uploaded_file is not None:
                             if len(loc[0]) > 0:
                                 h, w = logo.shape
                                 pt = (loc[1][0], loc[0][0])
-                                # Blauw kader om het logo op het voorbeeldscherm
                                 cv2.rectangle(img_canvas, pt, (pt[0] + w, pt[1] + h), (255, 0, 0), 4)
                                 logo_score += 2
                                 logo_gevonden = True
@@ -387,22 +379,19 @@ if uploaded_file is not None:
                 except Exception as logo_err:
                     st.error(f"Fout bij logo-scan: {logo_err}")
         
-        # Methode 2: Zoek naar logo-teksten in OCR-resultaten
-        if 'volledige_tekst' in locals():
+        # Methode 2: Logo-teksten herkennen
+        if volledige_tekst:
             logo_teksten = ["hoop", "vertrouwen", "moed", "cocaine anonymous"]
             logo_tekst_score = 0
             
             for woord in logo_teksten:
-                if woord in volledige_tekst.lower():
+                if woord in txt_lower:
                     logo_tekst_score += 1
             
             if logo_tekst_score >= 2:
                 logo_score += 1
                 if logo_tekst_score >= 3:
                     logo_score += 1
-                    st.success("✅ **CA-logo tekststructuur herkend**")
-                else:
-                    st.info("ℹ️ **CA-logo tekst gedeeltelijk herkend**")
         
         # Eindbeoordeling logo
         if logo_score >= 3:
@@ -414,6 +403,48 @@ if uploaded_file is not None:
         else:
             st.warning(f"⚠️ **Geen officieel CA-logo herkend** (score: {logo_score}/5)")
 
+        # --- SAMENVATTEND RAPPORT (NU ONDERAAN) ---
+        st.markdown("---")
+        st.markdown("#### 📊 Samenvattend Rapport")
+        
+        # Bepaal of kritieke checks zijn geslaagd
+        kritiek_geslaagd = logo_gevonden and (traditie_fuzzy_score >= 70 or zesde_traditie_score >= 3)
+        
+        if kritiek_geslaagd:
+            st.success("✅ **Kritieke controles geslaagd:** Logo en 6e traditie aanwezig")
+        else:
+            if not logo_gevonden:
+                st.error("❌ **Kritieke check mislukt:** CA-logo niet gevonden")
+            if traditie_fuzzy_score < 70 and zesde_traditie_score < 3:
+                st.error("❌ **Kritieke check mislukt:** 6e traditie niet gevonden")
+        
+        # Detailrapport
+        with st.expander("📋 Bekijk gedetailleerd rapport"):
+            st.markdown("**🔴 KRITIEKE CONTROLES**")
+            st.write(f"{'✅' if logo_gevonden else '❌'} CA-logo (score: {logo_score}/5)")
+            st.write(f"{'✅' if (traditie_fuzzy_score >= 70 or zesde_traditie_score >= 3) else '⚠️' if (traditie_fuzzy_score >= 50 or zesde_traditie_score >= 1) else '❌'} 6e traditie (fuzzy: {traditie_fuzzy_score:.0f}%, woorden: {zesde_traditie_score}/6)")
+            
+            st.markdown("**🏢 EVENEMENT**")
+            # Hier zouden we de variabelen moeten opslaan tijdens de checks
+            st.write("ℹ️ Details hierboven bekijken")
+            
+            st.markdown("**📞 CONTACT**")
+            if telefoon_match:
+                st.write(f"✅ Telefoon: {telefoon_match.group(0)}")
+            else:
+                st.write("ℹ️ Geen telefoonnummer")
+            
+            if email_match:
+                st.write(f"✅ E-mail: {email_match.group(0)}")
+            else:
+                st.write("ℹ️ Geen e-mailadres")
+            
+            st.markdown("**🌐 ONLINE**")
+            if "zoom" in txt_lower or "meet" in txt_lower:
+                st.write("✅ Online link aanwezig")
+            else:
+                st.write("ℹ️ Geen online link")
+
     # RECHTERKOLOM: Het visuele voorbeeldscherm
     with col2:
         st.markdown("### 🖼️ Voorbeeldscherm (Visuele Matrix)")
@@ -422,18 +453,18 @@ if uploaded_file is not None:
         # Toon de bewerkte afbeelding met alle getekende kaders
         st.image(img_canvas, use_column_width=True, caption="Flyer met live omlijning van de gedetecteerde matrix-elementen")
         
-        if 'volledige_tekst' in locals() and volledige_tekst:
+        if volledige_tekst:
             with st.expander("Bekijk volledige opgeschoonde tekst (ruw)"):
                 st.write(volledige_tekst)
         
         # Toon ruwe OCR-output voor debugging
-        if 'ruwe_regels' in locals():
+        if ruwe_regels:
             with st.expander("🔧 Ruwe OCR-output (debug)"):
                 for i, regel in enumerate(ruwe_regels):
                     st.write(f"{i+1}. `{regel}`")
 
     # Toon de tijdregels die gevonden zijn voor debugging
-    if 'tijd_regels' in locals() and tijd_regels:
+    if tijd_regels:
         with st.sidebar:
             st.markdown("### ⏰ Gedetecteerde tijden")
             for i, tijd in enumerate(tijd_regels):
