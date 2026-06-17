@@ -7,8 +7,79 @@ import easyocr
 import requests
 import re
 
-# Vanaf hier mag pas je bestandsuploader of pagina-instelling komen:
-# uploaded_file = st.file_uploader("Upload hier de flyer (JPG, JPEG, PNG)", type=["jpg", "jpeg", "png"])
+# Fallback voor fuzzy matching zonder extra dependencies
+def simple_fuzzy_match(text1, text2):
+    """Eenvoudige fuzzy match zonder rapidfuzz"""
+    text1 = text1.lower().strip()
+    text2 = text2.lower().strip()
+    
+    # Check of een tekst de andere bevat
+    if text1 in text2 or text2 in text1:
+        return 100
+
+    # Check woorden die overlappen
+    words1 = set(text1.split())
+    words2 = set(text2.split())
+    overlap = len(words1.intersection(words2))
+    total = max(len(words1), len(words2))
+
+    if total == 0:
+        return 0
+
+    return (overlap / total) * 100
+
+# Extra handige helper om OCR-typefouten in losse trefwoorden op te vangen
+def word_similarity(w1, w2):
+    """Berekent karakteroverlap tussen twee woorden (0.0 - 1.0)"""
+    w1, w2 = w1.lower().strip(), w2.lower().strip()
+    if w1 in w2 or w2 in w1:
+        return 1.0
+    # Tel overlappende karakters (eenvoudige letter-voor-letter vergelijking)
+    matches = sum(1 for c in w1 if c in w2)
+    return matches / max(len(w1), len(w2))
+
+# Pagina-instellingen
+st.set_page_config(
+    page_title="C.A. Drukwerk Checker",
+    page_icon="📋",
+    layout="wide"
+)
+
+st.title("📋 C.A. Drukwerk Checker")
+st.subheader("Controleer de verplichte elementen en inhoud van de flyer matrix")
+
+# 1. Cache de EasyOCR Reader
+@st.cache_resource
+def load_ocr_reader():
+    try:
+        return easyocr.Reader(['nl'], gpu=False)
+    except Exception as e:
+        st.error(f"❌ Fout bij het laden van EasyOCR: {e}")
+        return None
+
+reader = load_ocr_reader()
+
+# 2. Functie om logo's veilig te downloaden van GitHub
+@st.cache_data
+def download_official_logos():
+    logos = []
+    urls = [
+        "https://raw.githubusercontent.com/picazuid-pilot/CA-Drukwerk-Checker/main/logo1.png",
+        "https://raw.githubusercontent.com/picazuid-pilot/CA-Drukwerk-Checker/main/logo2.png"
+    ]
+    for url in urls:
+        try:
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                img_bytes = np.frombuffer(response.content, dtype=np.uint8)
+                img = cv2.imdecode(img_bytes, cv2.IMREAD_GRAYSCALE)
+                if img is not None:
+                    logos.append(img)
+        except Exception:
+            pass
+    return logos
+
+logos = download_official_logos()
 
 # Bestandsuploader
 uploaded_file = st.file_uploader("Upload hier de flyer (JPG, JPEG, PNG)", type=["jpg", "jpeg", "png"])
