@@ -73,38 +73,4 @@ def check_tradition_6(full_text):
             matches += 1
     return matches >= 3
 
-def create_bleed_image(original_img, bleed_pixels, method, custom_color=None):
-    width, height = original_img.size
-    new_width = width + (bleed_pixels * 2)
-    new_height = height + (bleed_pixels * 2)
-    
-    if method == "Wit / Geselecteerde Kleur":
-        color = custom_color if custom_color else (255, 255, 255)
-        new_img = Image.new('RGB', (new_width, new_height), color)
-        new_img.paste(original_img, (bleed_pixels, bleed_pixels))
-        
-    elif method == "Spiegelen (Mirror)":
-        # Veiligheidslaag tegen subpixel-kieren
-        new_img = original_img.resize((new_width, new_height), Image.Resampling.NEAREST)
-        new_img.paste(original_img, (bleed_pixels, bleed_pixels))
-        
-        # Spiegel randen met 1 pixel extra overlap
-        top_mirror = original_img.crop((0, 0, width, bleed_pixels + 1))
-        top_mirror = top_mirror.transpose(Image.FLIP_TOP_BOTTOM)
-        new_img.paste(top_mirror, (bleed_pixels, 0))
-        
-        bottom_mirror = original_img.crop((0, height - bleed_pixels - 1, width, height))
-        bottom_mirror = bottom_mirror.transpose(Image.FLIP_TOP_BOTTOM)
-        new_img.paste(bottom_mirror, (bleed_pixels, new_height - bleed_pixels))
-        
-        left_mirror = original_img.crop((0, 0, bleed_pixels + 1, height))
-        left_mirror = left_mirror.transpose(Image.FLIP_LEFT_RIGHT)
-        new_img.paste(left_mirror, (0, bleed_pixels))
-        
-        right_mirror = original_img.crop((width - bleed_pixels - 1, 0, width, height))
-        right_mirror = right_mirror.transpose(Image.FLIP_LEFT_RIGHT)
-        new_img.paste(right_mirror, (new_width - bleed_pixels, bleed_pixels))
-        
-        # Hoeken
-        top_left = original_img.crop((0, 0, bleed_pixels + 1, bleed_pixels + 1)).transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
-        new_img.paste(top_left,
+def create_bleed_image(original_
