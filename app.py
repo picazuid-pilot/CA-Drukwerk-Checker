@@ -3,136 +3,143 @@ import cv2
 import numpy as np
 from PIL import Image
 import io
-import re
-from difflib import SequenceMatcher
+import traceback
 
 # Pagina-instellingen
 st.set_page_config(
-    page_title="C.A. Drukwerk Checker",
-    page_icon="📋",
+    page_title="C.A. Drukwerk Checker - Debug",
+    page_icon="🔧",
     layout="wide"
 )
 
-st.title("📋 C.A. Drukwerk Checker")
-st.subheader("Simpele OCR-analyse")
+st.title("🔧 C.A. Drukwerk Checker - Debug Modus")
+st.subheader("Stap-voor-stap debuggen van de afbeelding")
 
-# 1. Probeer EasyOCR te laden met try-except
+# 1. EERST: Check of OpenCV werkt
+try:
+    st.write("✅ OpenCV geladen")
+except Exception as e:
+    st.error(f"❌ OpenCV fout: {e}")
+
+# 2. Check PIL
+try:
+    from PIL import Image
+    st.write("✅ PIL geladen")
+except Exception as e:
+    st.error(f"❌ PIL fout: {e}")
+
+# 3. Probeer EasyOCR (met fallback)
 try:
     import easyocr
-    reader = easyocr.Reader(['nl'], gpu=False)
-    OCR_BESCHIKBAAR = True
-    st.sidebar.success("✅ OCR geladen")
-except Exception as e:
-    OCR_BESCHIKBAAR = False
-    st.sidebar.error(f"❌ OCR fout: {e}")
+    EASYOCR_AVAILABLE = True
+    st.write("✅ EasyOCR geïnstalleerd")
+except ImportError:
+    EASYOCR_AVAILABLE = False
+    st.warning("⚠️ EasyOCR niet geïnstalleerd (werkt zonder OCR)")
 
-# 2. Helper functies
-def word_similarity(w1, w2):
-    try:
-        return SequenceMatcher(None, str(w1).lower().strip(), str(w2).lower().strip()).ratio()
-    except:
-        return 0.0
-
-# 3. Bestandsuploader
+# Bestandsuploader
 uploaded_file = st.file_uploader("Upload hier de flyer (JPG, JPEG, PNG)", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
+    st.write("---")
+    st.write("### 📁 Bestand verwerken...")
+    
     try:
-        # 4. Lees bestand
+        # STAP 1: Lees bytes
         file_bytes = uploaded_file.read()
+        st.write(f"✅ Bestand gelezen: {len(file_bytes)} bytes")
         
-        # 5. Open met PIL
-        image_pil = Image.open(io.BytesIO(file_bytes))
-        img_np = np.array(image_pil)
+        # STAP 2: Open met PIL
+        try:
+            image_pil = Image.open(io.BytesIO(file_bytes))
+            st.write(f"✅ PIL afbeelding geopend: {image_pil.size}, mode: {image_pil.mode}")
+            
+            # Converteer naar RGB als nodig
+            if image_pil.mode != "RGB":
+                image_pil = image_pil.convert("RGB")
+                st.write(f"   → Geconverteerd naar RGB")
+            
+        except Exception as e:
+            st.error(f"❌ PIL fout: {e}")
+            st.code(traceback.format_exc())
+            st.stop()
         
-        # 6. Converteer naar RGB indien nodig
-        if len(img_np.shape) == 3 and img_np.shape[2] == 4:
-            img_np = cv2.cvtColor(img_np, cv2.COLOR_RGBA2RGB)
-        elif len(img_np.shape) == 2:
-            img_np = cv2.cvtColor(img_np, cv2.COLOR_GRAY2RGB)
+        # STAP 3: Converteer naar numpy array
+        try:
+            img_np = np.array(image_pil)
+            st.write(f"✅ Numpy array: {img_np.shape}, dtype: {img_np.dtype}")
+        except Exception as e:
+            st.error(f"❌ Numpy conversie fout: {e}")
+            st.code(traceback.format_exc())
+            st.stop()
         
-        st.success(f"✅ Afbeelding geladen: {img_np.shape}")
-        
-        # 7. Toon afbeelding
-        col1, col2 = st.columns([1, 1])
+        # STAP 4: Toon afbeelding
+        col1, col2 = st.columns([2, 1])
         
         with col1:
-            st.image(img_np, caption="Geüploade flyer", use_container_width=True)
+            st.image(img_np, caption="Afbeelding geladen", use_container_width=True)
         
         with col2:
-            st.markdown("### 📝 Analyse Resultaten")
+            st.write("### 📊 Afbeeldingsinfo")
+            st.write(f"- Formaat: {img_np.shape[1]}x{img_np.shape[0]}")
+            st.write(f"- Kanale: {img_np.shape[2] if len(img_np.shape) > 2 else 1}")
+            st.write(f"- Min waarde: {img_np.min()}")
+            st.write(f"- Max waarde: {img_np.max()}")
             
-            # 8. OCR uitvoeren (alleen als beschikbaar)
-            if OCR_BESCHIKBAAR:
-                try:
-                    with st.spinner("OCR scan bezig..."):
-                        # Een simpele OCR pass
-                        results = reader.readtext(img_np, detail=1)
-                        
-                        # Verzamel alle tekst
-                        alle_tekst = []
-                        gevonden_woorden = []
-                        logo_woorden_gevonden = []
-                        
-                        st.markdown("**Gevonden tekst:**")
-                        
-                        for (bbox, text, prob) in results:
-                            if prob > 0.2:
-                                alle_tekst.append(text)
-                                st.write(f"• `{text}` (confidence: {prob:.2f})")
-                                
-                                # Zoek naar logo-woorden
-                                text_lower = text.lower()
-                                for woord in ["hoop", "vertrouwen", "moed"]:
-                                    if woord in text_lower or word_similarity(woord, text_lower) > 0.7:
-                                        gevonden_woorden.append(woord)
-                                        logo_woorden_gevonden.append(text)
-                        
-                        # Check logo
-                        st.markdown("---")
-                        st.markdown("### 🖼️ Logo Check")
-                        
-                        if len(set(gevonden_woorden)) >= 2:
-                            st.success(f"✅ Logo herkend! Woorden: {', '.join(set(gevonden_woorden))}")
-                            st.info(f"Gevonden in: {', '.join(logo_woorden_gevonden[:3])}")
-                        elif len(set(gevonden_woorden)) >= 1:
-                            st.warning(f"⚠️ Logo gedeeltelijk herkend: {', '.join(set(gevonden_woorden))}")
-                        else:
-                            st.warning("⚠️ Geen logo-teksten gevonden")
-                            st.caption("Zoek naar: 'hoop', 'vertrouwen', 'moed'")
-                        
-                        # Check 6e traditie
-                        st.markdown("---")
-                        st.markdown("### 📝 6e Traditie Check")
-                        
-                        alle_tekst_lower = " ".join(alle_tekst).lower()
-                        traditie_woorden = ["6e", "traditie", "kerken", "sekten"]
-                        gevonden_traditie = []
-                        
-                        for woord in traditie_woorden:
-                            if woord in alle_tekst_lower:
-                                gevonden_traditie.append(woord)
-                        
-                        if len(gevonden_traditie) >= 3:
-                            st.success(f"✅ 6e traditie gevonden! ({len(gevonden_traditie)}/4)")
-                        elif len(gevonden_traditie) >= 2:
-                            st.warning(f"⚠️ 6e traditie gedeeltelijk ({len(gevonden_traditie)}/4)")
-                        else:
-                            st.error("❌ 6e traditie niet gevonden")
-                        
-                        # Toon alle tekst
-                        with st.expander("📝 Volledige OCR tekst"):
-                            st.write(" ".join(alle_tekst))
-                            
-                except Exception as e:
-                    st.error(f"❌ OCR fout: {e}")
-                    st.code(str(e))
+        # STAP 5: Probeer OpenCV conversie
+        try:
+            if len(img_np.shape) == 3 and img_np.shape[2] == 3:
+                img_gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+                st.write(f"✅ Grayscale conversie: {img_gray.shape}")
             else:
-                st.error("❌ OCR is niet beschikbaar. EasyOCR kon niet laden.")
+                st.warning(f"⚠️ Onverwacht kleurenformaat: {img_np.shape}")
+        except Exception as e:
+            st.error(f"❌ OpenCV conversie fout: {e}")
+            st.code(traceback.format_exc())
+        
+        # STAP 6: Probeer OCR (alleen als beschikbaar)
+        st.write("---")
+        st.write("### 🔍 OCR Test")
+        
+        if EASYOCR_AVAILABLE:
+            try:
+                # Vertraagde import om memory te besparen
+                import easyocr
                 
+                st.write("EasyOCR initialiseren...")
+                reader = easyocr.Reader(['en'], gpu=False)
+                st.write("✅ EasyOCR reader aangemaakt")
+                
+                with st.spinner("OCR scan bezig..."):
+                    results = reader.readtext(img_np, detail=0)
+                    st.write(f"✅ OCR scan voltooid: {len(results)} regels gevonden")
+                    
+                    if results:
+                        st.write("### 📝 Gevonden tekst:")
+                        for i, text in enumerate(results[:20]):
+                            st.write(f"{i+1}. `{text}`")
+                        if len(results) > 20:
+                            st.write(f"... en nog {len(results)-20} regels")
+                    else:
+                        st.warning("⚠️ Geen tekst gevonden in afbeelding")
+                        
+            except Exception as e:
+                st.error(f"❌ OCR fout: {e}")
+                st.code(traceback.format_exc())
+        else:
+            st.info("ℹ️ EasyOCR niet beschikbaar, sla OCR over")
+            
     except Exception as e:
-        st.error(f"❌ Fout bij verwerken afbeelding: {e}")
-        st.code(str(e))
+        st.error(f"❌ Algemene fout: {e}")
+        st.code(traceback.format_exc())
 
 else:
-    st.info("👆 Upload een flyer om te beginnen")
+    st.info("👆 Upload een flyer om te beginnen met debuggen")
+    
+    st.write("### 📋 Wat er getest wordt:")
+    st.write("1. ✅ Bestand lezen")
+    st.write("2. ✅ PIL afbeelding openen")
+    st.write("3. ✅ Numpy conversie")
+    st.write("4. ✅ Afbeelding weergeven")
+    st.write("5. ✅ OpenCV conversie")
+    st.write("6. ✅ EasyOCR (indien beschikbaar)")
