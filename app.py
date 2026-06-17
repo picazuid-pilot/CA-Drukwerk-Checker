@@ -60,18 +60,13 @@ reader = load_ocr_reader()
 @st.cache_data
 def download_official_logos():
     logos = []
-    urls = [
-        "https://raw.githubusercontent.com/picazuid-pilot/CA-Drukwerk-Checker/main/logo1.png",
-        "https://raw.githubusercontent.com/picazuid-pilot/CA-Drukwerk-Checker/main/logo2.png"
-    ]
-    for url in urls:
+    # Zoekt lokaal in plaats van op internet
+    paden = ["assets/logo1.png", "assets/logo2.png"]
+    for pad in paden:
         try:
-            response = requests.get(url, timeout=5)
-            if response.status_code == 200:
-                img_bytes = np.frombuffer(response.content, dtype=np.uint8)
-                img = cv2.imdecode(img_bytes, cv2.IMREAD_GRAYSCALE)
-                if img is not None:
-                    logos.append(img)
+            img = cv2.imread(pad, cv2.IMREAD_GRAYSCALE)
+            if img is not None:
+                logos.append(img)
         except Exception:
             pass
     return logos
