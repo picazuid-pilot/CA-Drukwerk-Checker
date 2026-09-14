@@ -8,6 +8,11 @@ automatisch op de eisen voor goedkeuring.
 **Verplicht voor goedkeuring:**
 - Gebruik van een officieel Nederlands CA-logo (in elke kleur-/achtergrondvariant)
 - De letterlijke 6de-Traditie-zin, met detectie van spelfouten/afwijkingen
+  (bekende schrijfvarianten zoals "6e" i.p.v. "6de" en "CA" i.p.v. "C.A."
+  worden geaccepteerd, zie `WORD_VARIANT_MAP` in `app.py`)
+- Correcte hulplijn, e-mailadres en website — **alleen als ze vermeld staan**.
+  Opmaakvarianten (spaties/streepjes/hoofdletters, met of zonder www./https://)
+  zijn toegestaan; een verkeerd cijfer of een typfout in het domein niet.
 
 **Aanbevolen (indien van toepassing op het drukwerk):**
 - "Georganiseerd door"-vermelding

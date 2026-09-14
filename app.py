@@ -61,6 +61,21 @@ REQUIRED_SENTENCE = (
 
 BLEED_TOOL_URL = "https://bleed-cmyk-builderpy-ecaauj8zkjwrhhivxmilqq.streamlit.app/"
 
+# Officiële contactgegevens van CA Holland. Pas dit aan als deze ooit wijzigen —
+# de rest van de controle-logica hoeft dan niet aangepast te worden.
+CORRECT_PHONE_DIGITS = "0610192770"          # 06 101 92770, alleen cijfers
+CORRECT_PHONE_DISPLAY = "06 101 92770"
+CORRECT_EMAIL = "info@ca-holland.nl"
+CORRECT_WEBSITE_DOMAIN = "ca-holland.nl"
+
+# OCR/typfout-gevoelige tekens die vaak verward worden met cijfers
+_DIGIT_LOOKALIKES = {
+    "o": "0", "O": "0",
+    "i": "1", "I": "1", "l": "1", "L": "1",
+    "s": "5", "S": "5",
+    "b": "8", "B": "8",
+}
+
 # Formaten die we herkennen als "standaard papierformaat zonder bleed" (mm, staand+liggend)
 STANDARD_SIZES_MM = [
     (105, 148), (148, 105),  # A6
@@ -427,6 +442,83 @@ def check_full_names(full_text: str):
 
 
 # =============================================================================
+# Contactgegevens: hulplijn, e-mail, website
+# =============================================================================
+# Filosofie: deze gegevens zijn niet verplicht aanwezig, maar ALS ze aanwezig
+# zijn moeten ze correct zijn. Opmaakvarianten (spaties/streepjes/hoofdletters/
+# met of zonder www./https://) zijn toegestaan; een verkeerd cijfer, een typfout
+# in het domein, of een andere aanbieder is dat niet.
+
+def _normalize_phone_candidate(raw: str) -> str:
+    """Vervangt cijfer-lookalike letters (O/o, l/I, S, B) door hun cijfer en
+    strip alle overige tekens (spaties, streepjes, punten) tot een pure
+    cijferreeks."""
+    mapped = "".join(_DIGIT_LOOKALIKES.get(ch, ch) for ch in raw)
+    return re.sub(r"[^\d]", "", mapped)
+
+
+def check_helpline(full_text: str) -> dict:
+    # De check is gekoppeld aan het label 'hulplijn' zelf (tolerant voor kleine
+    # schrijffouten zoals 'hulp lijn'); zonder dat label wordt dit veld als
+    # niet-aanwezig beschouwd (conform "wanneer de hulplijn erop staat").
+    label_match = re.search(r"hulp\s*lijn\s*[:\-]?\s*", full_text, re.IGNORECASE)
+    if label_match is None:
+        return {"present": False, "correct": None, "found": None}
+
+    # Beperk het zoekgebied tot de rest van DEZELFDE regel als het label, zodat
+    # een regeleinde + het begin van het volgende veld (bv. 'info@...') niet
+    # per ongeluk wordt meegelezen als onderdeel van het nummer.
+    rest_of_line = full_text[label_match.end():].split("\n", 1)[0]
+
+    candidate_match = re.search(
+        r"[0-9OoIlLiSsBb][0-9OoIlLiSsBb \-.]{7,16}[0-9OoIlLiSsBb]", rest_of_line
+    )
+
+    if candidate_match is None:
+        # Label 'hulplijn' staat er wel, maar er volgt geen herkenbaar nummer
+        return {"present": True, "correct": False, "found": None}
+
+    raw_found = candidate_match.group(0).strip()
+    normalized = _normalize_phone_candidate(raw_found)
+    correct = normalized == CORRECT_PHONE_DIGITS
+
+    return {"present": True, "correct": correct, "found": raw_found}
+
+
+def check_email(full_text: str) -> dict:
+    match = re.search(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", full_text)
+    if not match:
+        return {"present": False, "correct": None, "found": None}
+
+    raw_found = match.group(0)
+    normalized = raw_found.strip().lower().rstrip(".,;:")
+    correct = normalized == CORRECT_EMAIL
+
+    return {"present": True, "correct": correct, "found": raw_found}
+
+
+def check_website(full_text: str) -> dict:
+    # Alleen tellen als het duidelijk een URL/website-vermelding is (begint met
+    # www. of http(s)://), om te voorkomen dat het domein van het e-mailadres
+    # dubbel als 'website' wordt geteld. Sluithaakjes/aanhalingstekens (bv. uit
+    # een markdown-link) worden expliciet uitgesloten van de match, anders
+    # wordt de hele link inclusief opmaak als 1 token ingeslikt.
+    match = re.search(r"(https?://[^\s\)\]\}\"'<>]+|www\.[^\s\)\]\}\"'<>]+)", full_text, re.IGNORECASE)
+    if not match:
+        return {"present": False, "correct": None, "found": None}
+
+    raw_found = match.group(0)
+    domain = raw_found.lower()
+    domain = re.sub(r"^https?://", "", domain)
+    domain = re.sub(r"^www\.", "", domain)
+    domain = domain.split("/")[0]
+    domain = domain.rstrip(".,;:")
+    correct = domain == CORRECT_WEBSITE_DOMAIN
+
+    return {"present": True, "correct": correct, "found": raw_found}
+
+
+# =============================================================================
 # Print-gereedheid (CMYK + bleed) — alleen betrouwbaar voor PDF
 # =============================================================================
 
@@ -570,6 +662,9 @@ def analyze_file(uploaded_file, ai_config=None):
     results["location"] = check_location(ocr_text)
     results["date_time"] = check_date_time(ocr_text)
     results["full_names"] = check_full_names(ocr_text)
+    results["helpline"] = check_helpline(ocr_text)
+    results["email"] = check_email(ocr_text)
+    results["website"] = check_website(ocr_text)
 
     # --- 4. Optionele AI-verfijning ---
     if ai_config and ai_config.get("api_key") and ocr_text.strip():
@@ -595,9 +690,14 @@ def analyze_file(uploaded_file, ai_config=None):
         results["is_pdf"] = False
 
     # --- Eindoordeel (verplichte eisen) ---
+    contact_details_wrong = any(
+        results[key]["present"] and not results[key]["correct"]
+        for key in ("helpline", "email", "website")
+    )
     results["approved"] = (
         results["logo"]["found"]
         and results["sentence"]["status"] == "ok"
+        and not contact_details_wrong
     )
 
     return results
@@ -661,7 +761,8 @@ def main():
         st.markdown(
             "**Verplicht:**\n"
             "- ✅ Officieel Nederlands CA-logo\n"
-            "- ✅ 6de-Traditie-zin (correct)\n\n"
+            "- ✅ 6de-Traditie-zin (correct)\n"
+            "- ✅ Correcte hulplijn/e-mail/website, *indien vermeld*\n\n"
             "**Aanbevolen (indien van toepassing):**\n"
             "- Georganiseerd door\n"
             "- Adres/locatie of Zoomlink\n"
@@ -737,6 +838,21 @@ def main():
         dt = results["date_time"]
         render_check_line("", "Datum vermeld", dt["found_date"])
         render_check_line("", "Tijd vermeld", dt["found_time"])
+
+        st.markdown("#### Contactgegevens (indien aanwezig, moet correct zijn)")
+        for key, label, expected in (
+            ("helpline", "Hulplijn", CORRECT_PHONE_DISPLAY),
+            ("email", "E-mailadres", CORRECT_EMAIL),
+            ("website", "Website", CORRECT_WEBSITE_DOMAIN),
+        ):
+            info = results[key]
+            if not info["present"]:
+                st.write(f"⚪ {label} niet aangetroffen (niet verplicht)")
+            elif info["correct"]:
+                st.write(f"✅ {label} correct: \"{info['found']}\"")
+            else:
+                found_display = info["found"] or "(geen herkenbaar nummer/adres na het label)"
+                st.error(f"❌ {label} onjuist — gevonden: \"{found_display}\", verwacht: \"{expected}\"")
 
         st.markdown("#### Anonimiteit (Traditie 12)")
         names = results["full_names"]
