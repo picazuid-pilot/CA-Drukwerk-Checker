@@ -29,10 +29,15 @@ automatisch op de eisen voor goedkeuring.
 
 ## Hoe het werkt (geen betaalde API's nodig)
 
-- **Logo-detectie**: shape-based (edge/contour) template matching op meerdere
-  schalen. Werkt onafhankelijk van de kleurvariant (wit/zwart/groene outline,
-  transparante/witte/groene achtergrond), omdat alleen de vorm van het logo
-  wordt vergeleken, niet de kleur.
+- **Logo-detectie**: eerst een Hough-cirkeldetectie om kandidaat-locaties (positie
+  én schaal) te vinden — alle 12 officiële varianten zijn immers een
+  cirkelvormig zegel, dus dit is een veel preciezere lokalisatiestrategie dan
+  een blinde multi-schaal-scan. Op de gevonden kandidaten wordt vervolgens een
+  vervaagde randenvergelijking gedaan (kleur-/achtergrondonafhankelijk, en
+  tolerant voor kleine misalignment door JPEG-compressie). Bij een sterk
+  vervormd/geroteerd logo valt de detectie terug op een blinde multi-schaal-scan.
+  Het weergegeven percentage bij deze check is herschaald voor leesbaarheid —
+  zie `_logo_score_to_percent()` in `app.py` voor de uitleg waarom.
 - **Tekstcontrole**: OCR via Tesseract (Nederlandse taalset) + woord-voor-woord
   vergelijking met de verplichte zin. Afwijkingen worden per woord getoond
   ("gevonden: X → verwacht: Y"), zodat je zelf kunt beoordelen of het een

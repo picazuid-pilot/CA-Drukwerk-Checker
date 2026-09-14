@@ -137,6 +137,18 @@ def _prep_edges(gray_array, blur_ksize=3):
     return edges
 
 
+def _soft_edges(edges, k=13):
+    """
+    Vervaagt een binaire randenkaart tot een vloeiende 'randkans'-kaart.
+    Cruciaal voor betrouwbare matching: pixel-exacte randcorrelatie faalt
+    al bij een verschuiving van een paar pixels (JPEG-compressie, lichte
+    schaalafwijking), wat bij fijne details zoals ringtekst al snel
+    voorkomt. Door te vervagen wordt matching tolerant voor zulke kleine
+    afwijkingen zonder de algehele vorm te verliezen.
+    """
+    return cv2.GaussianBlur(edges.astype(np.float32), (k, k), 0)
+
+
 def load_logo_templates(assets_folder: Path):
     """
     Laadt alle referentielogo's uit de assets-map en zet ze om naar een
@@ -162,28 +174,81 @@ def load_logo_templates(assets_folder: Path):
                 gray = cv2.cvtColor(arr[:, :, :3], cv2.COLOR_RGB2GRAY)
                 gray_crop = gray[y0:y1, x0:x1]
                 alpha_crop = alpha[y0:y1, x0:x1]
-                # Waar geen alpha is: neutraliseren (voorkomt valse edges op transparante rand)
-                gray_crop = np.where(alpha_crop > 10, gray_crop, 255).astype(np.uint8)
+                # Waar geen alpha is: neutraliseren met een MIDDENGRIJS (niet wit!).
+                # Bij een witte outline op transparante achtergrond zou een witte
+                # opvulkleur de outline volledig laten verdwijnen (geen contrast =
+                # geen randen te detecteren). Middengrijs geeft altijd contrast,
+                # ongeacht of de outline wit of zwart is.
+                gray_crop = np.where(alpha_crop > 10, gray_crop, 128).astype(np.uint8)
             else:
                 arr = np.array(pil_img.convert("RGB"))
                 gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
-                # Uitsnijden op basis van contour t.o.v. dominante hoekkleur
                 gray_crop = gray
 
             edges = _prep_edges(gray_crop)
-            # Ook een geïnverteerde variant (donkere vs lichte outline op vergelijkbare achtergrond
-            # geeft dezelfde edge-map na Canny, dus dit is vooral defensief)
-            templates.append({"name": file.stem, "edges": edges, "shape": edges.shape})
+            soft = _soft_edges(edges)
+            templates.append({
+                "name": file.stem, "edges": edges, "soft": soft, "shape": edges.shape,
+            })
         except Exception:
             continue
 
     return templates
 
 
-def find_logo_in_page(page_rgb_array, templates, scales=None, match_threshold=0.28):
+def _score_candidate_region(work_gray, cx, cy, r, resized_templates, pad=1.08, fixed_size=220):
     """
-    Doorzoekt de pagina op meerdere schalen naar elk van de referentie-logo's,
-    met edge-based template matching (kleur-/achtergrondonafhankelijk).
+    Snijdt een vierkante regio rond een kandidaat-cirkel (met kleine marge),
+    schaalt die naar een vaste werkgrootte (voor consistente en snelle
+    matching, ongeacht hoe groot de gedetecteerde cirkel op de pagina is),
+    en vergelijkt de vervaagde randenkaart tegen alle referentietemplates
+    (al vooraf op dezelfde vaste grootte geschaald, zie find_logo_in_page).
+    Retourneert (beste_score, beste_naam) voor deze ene kandidaat-locatie.
+    """
+    h, w = work_gray.shape
+    half = int(r * pad)
+    x0, x1 = max(0, int(cx - half)), min(w, int(cx + half))
+    y0, y1 = max(0, int(cy - half)), min(h, int(cy + half))
+    if x1 - x0 < 20 or y1 - y0 < 20:
+        return -1.0, None
+
+    region_gray = work_gray[y0:y1, x0:x1]
+    if region_gray.shape[0] != fixed_size or region_gray.shape[1] != fixed_size:
+        region_gray = cv2.resize(region_gray, (fixed_size, fixed_size), interpolation=cv2.INTER_AREA)
+
+    region_edges = _prep_edges(region_gray)
+    if np.count_nonzero(region_edges) < 30:
+        return -1.0, None  # nagenoeg lege regio, niet de moeite van het scoren waard
+    region_soft = _soft_edges(region_edges)
+
+    best_score = -1.0
+    best_name = None
+    for name, resized_soft in resized_templates.items():
+        try:
+            result = cv2.matchTemplate(region_soft, resized_soft, cv2.TM_CCOEFF_NORMED)
+        except cv2.error:
+            continue
+        score = float(result[0, 0]) if result.size == 1 else float(result.max())
+        if score > best_score:
+            best_score = score
+            best_name = name
+
+    return best_score, best_name
+
+
+def find_logo_in_page(page_rgb_array, templates, match_threshold=0.20):
+    """
+    Detecteert een officieel CA-logo op de pagina.
+
+    Strategie: alle 12 varianten zijn een cirkelvormig zegel, dus we
+    gebruiken eerst een Hough-cirkeldetectie om kandidaat-locaties (positie
+    én schaal) te vinden — veel preciezer dan een blinde multi-schaal-scan,
+    en dat blijkt in de praktijk nodig: pixel-exacte randcorrelatie is
+    gevoelig voor de kleinste afwijking, dus een goed gelokaliseerde
+    kandidaat scoort aanzienlijk beter dan een net-niet-uitgelijnde.
+    Als er geen cirkels gevonden worden (bv. bij een sterk vervormd of
+    geroteerd logo), valt de functie terug op een blinde multi-schaal-scan.
+
     Retourneert (gevonden: bool, beste_naam, beste_score, bbox)
     """
     if not templates:
@@ -191,73 +256,90 @@ def find_logo_in_page(page_rgb_array, templates, scales=None, match_threshold=0.
 
     page_gray = cv2.cvtColor(page_rgb_array, cv2.COLOR_RGB2GRAY)
     page_h, page_w = page_gray.shape
-    page_edges_full = _prep_edges(page_gray)
 
-    if scales is None:
-        # Relatieve logo-grootte t.o.v. paginabreedte: van heel klein tot bijna paginavullend
-        scales = np.linspace(0.04, 0.6, 24)
+    # Downscale voor snelheid; alle latere coördinaten rekenen we terug
+    max_dim = 1200
+    scale_factor = min(1.0, max_dim / max(page_h, page_w))
+    work_gray = (
+        cv2.resize(page_gray, (int(page_w * scale_factor), int(page_h * scale_factor)),
+                   interpolation=cv2.INTER_AREA)
+        if scale_factor < 1.0 else page_gray
+    )
+    work_h, work_w = work_gray.shape
 
     best_score = -1.0
     best_name = None
     best_bbox = None
 
-    # Downscale de pagina voor snelheid; we werken relatief dus dit is veilig
-    max_dim = 1400
-    scale_factor = min(1.0, max_dim / max(page_h, page_w))
-    if scale_factor < 1.0:
-        work_edges = cv2.resize(
-            page_edges_full,
-            (int(page_w * scale_factor), int(page_h * scale_factor)),
-            interpolation=cv2.INTER_AREA,
-        )
-    else:
-        work_edges = page_edges_full
-        scale_factor = 1.0
+    # --- Strategie 1: Hough-cirkeldetectie als precieze kandidaat-locator ---
+    circle_input = cv2.medianBlur(work_gray, 5)
+    circles = cv2.HoughCircles(
+        circle_input, cv2.HOUGH_GRADIENT, dp=1.2,
+        minDist=int(work_w * 0.06),
+        param1=80, param2=35,
+        minRadius=int(work_w * 0.015), maxRadius=int(work_w * 0.45),
+    )
 
-    work_h, work_w = work_edges.shape
+    if circles is not None:
+        # Hough retourneert kandidaten al gesorteerd op accumulator-sterkte
+        # (sterkste/meest cirkelvormige eerst). Op een drukke foto-achtergrond
+        # kunnen er honderden kandidaten ontstaan (haar, plooien, etc.); de
+        # echte logo-cirkel staat vrijwel altijd al binnen de eerste tientallen,
+        # dus we beperken ons tot de sterkste kandidaten voor de snelheid.
+        MAX_CANDIDATES = 50
+        candidates = circles[0][:MAX_CANDIDATES]
 
-    for tpl in templates:
-        t_h, t_w = tpl["shape"]
-        aspect = t_h / t_w
-
-        for rel_w in scales:
-            target_w = max(20, int(work_w * rel_w))
-            target_h = max(20, int(target_w * aspect))
-            if target_h >= work_h or target_w >= work_w:
-                continue
-
-            resized_tpl = cv2.resize(tpl["edges"], (target_w, target_h), interpolation=cv2.INTER_AREA)
-
-            try:
-                result = cv2.matchTemplate(work_edges, resized_tpl, cv2.TM_CCOEFF_NORMED)
-            except cv2.error:
-                continue
-
-            _, max_val, _, max_loc = cv2.minMaxLoc(result)
-
-            # Sanity-check: TM_CCOEFF_NORMED kan kunstmatig hoge scores geven op
-            # (bijna) lege/vlakke gebieden door numerieke instabiliteit bij een
-            # kleine noemer. Een match telt alleen mee als het gevonden gebied
-            # ook daadwerkelijk een vergelijkbare hoeveelheid randen bevat als
-            # het template zelf.
-            ox, oy = max_loc
-            patch = work_edges[oy:oy + target_h, ox:ox + target_w]
-            patch_edge_count = int(np.count_nonzero(patch))
-            template_edge_count = int(np.count_nonzero(resized_tpl))
-            if template_edge_count == 0:
-                continue
-            edge_ratio = patch_edge_count / template_edge_count
-            if edge_ratio < 0.35:
-                continue  # te weinig randen in het gevonden gebied: geen echte match
-
-            if max_val > best_score:
-                best_score = max_val
-                best_name = tpl["name"]
-                # Terugschalen naar originele paginacoördinaten
+        # Templates één keer vooraf schalen naar de vaste werkgrootte
+        # i.p.v. dit per kandidaat-cirkel te herhalen.
+        FIXED_SIZE = 220
+        resized_templates = {
+            tpl["name"]: cv2.resize(tpl["soft"], (FIXED_SIZE, FIXED_SIZE)) for tpl in templates
+        }
+        for cx, cy, r in candidates:
+            score, name = _score_candidate_region(work_gray, cx, cy, r, resized_templates, fixed_size=FIXED_SIZE)
+            if score > best_score:
+                best_score = score
+                best_name = name
                 best_bbox = (
-                    int(ox / scale_factor), int(oy / scale_factor),
-                    int(target_w / scale_factor), int(target_h / scale_factor),
+                    int((cx - r) / scale_factor), int((cy - r) / scale_factor),
+                    int(2 * r / scale_factor), int(2 * r / scale_factor),
                 )
+
+    # --- Strategie 2 (terugval): blinde multi-schaal-scan ---
+    # Alleen nodig als Hough niets bruikbaars vond, of als extra dekking voor
+    # logo's die (door vervorming/rotatie) niet als nette cirkel herkend worden.
+    if best_score < match_threshold:
+        work_edges = _prep_edges(work_gray)
+        work_soft = _soft_edges(work_edges)
+        scales = np.linspace(0.04, 0.6, 18)
+
+        for tpl in templates:
+            t_h, t_w = tpl["shape"]
+            aspect = t_h / t_w
+            for rel_w in scales:
+                target_w = max(20, int(work_w * rel_w))
+                target_h = max(20, int(target_w * aspect))
+                if target_h >= work_h or target_w >= work_w:
+                    continue
+                resized_tpl = cv2.resize(tpl["soft"], (target_w, target_h))
+                try:
+                    result = cv2.matchTemplate(work_soft, resized_tpl, cv2.TM_CCOEFF_NORMED)
+                except cv2.error:
+                    continue
+                _, max_val, _, max_loc = cv2.minMaxLoc(result)
+
+                ox, oy = max_loc
+                patch_edges = _prep_edges(work_gray[oy:oy + target_h, ox:ox + target_w])
+                if np.count_nonzero(patch_edges) < 30:
+                    continue  # (bijna) lege regio: geen betrouwbare match
+
+                if max_val > best_score:
+                    best_score = max_val
+                    best_name = tpl["name"]
+                    best_bbox = (
+                        int(ox / scale_factor), int(oy / scale_factor),
+                        int(target_w / scale_factor), int(target_h / scale_factor),
+                    )
 
     found = best_score >= match_threshold
     return found, best_name, float(best_score), best_bbox
@@ -712,6 +794,60 @@ def render_check_line(icon_ok, label, ok, detail=""):
     st.markdown(f"{icon} **{label}**" + (f" — {detail}" if detail else ""))
 
 
+def _score_color(percent: int) -> str:
+    if percent < 40:
+        return "#e03131"   # rood
+    elif percent < 75:
+        return "#f08c00"   # oranje
+    else:
+        return "#2f9e44"   # groen
+
+
+def render_score_circle(label: str, percent: int, detail: str = ""):
+    """Toont een stoplicht-achtige scorecirkel (rood/oranje/groen) met het
+    percentage erin, gevolgd door een label en optionele detailtekst."""
+    percent = max(0, min(100, int(round(percent))))
+    color = _score_color(percent)
+    detail_html = f'<div style="font-size:13px; opacity:0.75; margin-top:2px;">{detail}</div>' if detail else ""
+    html = f"""
+    <div style="display:flex; align-items:center; gap:14px; margin:10px 0;">
+      <div style="
+          width:54px; height:54px; min-width:54px; border-radius:50%;
+          background:{color}; color:white; font-weight:700;
+          display:flex; align-items:center; justify-content:center;
+          font-size:14px;">
+        {percent}%
+      </div>
+      <div>
+        <div style="font-weight:600;">{label}</div>
+        {detail_html}
+      </div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def _logo_score_to_percent(raw_score: float, threshold: float = 0.20, ceiling: float = 0.45) -> int:
+    """
+    Herschaalt de ruwe logo-matchingscore naar een intuïtief percentage.
+
+    De ruwe score komt uit randcorrelatie op een sterk gecomprimeerd bereik
+    (zelfs een perfect uitgelijnde, echte match haalt door JPEG-compressie en
+    fijne details meestal maar ~0.25-0.40, tegenover ~0.03-0.15 voor iets dat
+    duidelijk geen logo is) — een gebruiker heeft niets aan dat rauwe getal.
+    Daarom wordt alles ONDER de detectiedrempel afgebeeld op 0-50% (rood/
+    oranje) en alles ER BOVEN op 50-100% (oranje/groen), zodat de kleur
+    van de cirkel altijd overeenkomt met de ✅/❌-uitslag.
+    """
+    if raw_score <= 0:
+        return 0
+    if raw_score < threshold:
+        return int(round(50 * (raw_score / threshold)))
+    if raw_score >= ceiling:
+        return 100
+    return int(round(50 + 50 * (raw_score - threshold) / (ceiling - threshold)))
+
+
 def main():
     st.title("🖼️ CA Drukwerk Checker")
     st.caption(
@@ -811,16 +947,24 @@ def main():
         st.markdown("#### Verplichte controles")
 
         logo = results["logo"]
-        render_check_line(
-            "✅", "Officieel Nederlands CA-logo gevonden", logo["found"],
-            f"beste match: {logo['name']} (score {logo['score']})" if logo["name"] else "geen match gevonden",
+        logo_percent = _logo_score_to_percent(logo["score"])
+        logo_detail = (
+            f"beste kandidaat: {logo['name']}" if logo["name"] else "geen enkele kandidaat gevonden"
         )
+        render_score_circle("Officieel Nederlands CA-logo", logo_percent, logo_detail)
+        if not logo["found"]:
+            st.caption(
+                "⚠️ Onder de detectiedrempel — geen betrouwbare match. Dit kan kloppen "
+                "(geen logo aanwezig), maar controleer bij twijfel visueel of het logo "
+                "er echt niet op staat, vooral bij een drukke achtergrond of lage resolutie."
+            )
 
         sentence = results["sentence"]
+        sentence_percent = int(round(sentence["score"] * 100))
         if sentence["status"] == "ok":
-            render_check_line("✅", "6de-Traditie-zin correct aanwezig", True)
+            render_score_circle("6de-Traditie-zin", sentence_percent, "correct aanwezig")
         elif sentence["status"] == "likely_typo":
-            render_check_line("⚠️", "6de-Traditie-zin gevonden, maar wijkt af op onderstaande punten", False)
+            render_score_circle("6de-Traditie-zin", sentence_percent, "wijkt af op onderstaande punten")
             st.caption(
                 "Let op: dit kunnen echte spelfouten op het drukwerk zijn, maar OCR "
                 "leest soms ook correct gespelde tekst verkeerd (bv. bij een gestileerd "
@@ -829,7 +973,7 @@ def main():
             for d in sentence["differences"]:
                 st.write(f"— gevonden: *\"{d['gevonden']}\"* → verwacht: *\"{d['verwacht']}\"*")
         else:
-            render_check_line("❌", "6de-Traditie-zin niet gevonden", False)
+            render_score_circle("6de-Traditie-zin", sentence_percent, "niet gevonden")
 
         st.markdown("#### Aanbevolen controles")
         render_check_line("", "Georganiseerd door vermeld", results["organized_by"])
