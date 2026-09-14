@@ -280,8 +280,27 @@ def _tokenize(text: str):
     return re.findall(r"\S+", text)
 
 
+# Bekende, geaccepteerde schrijfvarianten die NIET als afwijking gemeld mogen
+# worden (uitbreidbaar). Sleutel = variant (na het strippen van 1 trailing
+# leesteken en lowercasen), waarde = canonieke vorm waarnaar genormaliseerd
+# wordt. Echte spelfouten die hier niet in staan blijven gewoon gevlagd.
+WORD_VARIANT_MAP = {
+    "6e": "6de",       # "6de Traditie" mag ook als "6e traditie" geschreven worden
+    "ca": "c.a",       # "C.A." mag ook zonder punten als "CA" geschreven worden
+}
+
+
 def _norm_word(w: str) -> str:
-    return w.lower()
+    """
+    Normaliseert een woord voor vergelijking: lowercase, één trailing
+    leesteken (punt/komma/puntkomma/dubbele punt) genegeerd — verschillen
+    in eindpunctuatie zijn geen taalfout — en bekende schrijfvarianten
+    (zie WORD_VARIANT_MAP) omgezet naar hun canonieke vorm.
+    """
+    core = w.lower()
+    if core and core[-1] in ".,;:":
+        core = core[:-1]
+    return WORD_VARIANT_MAP.get(core, core)
 
 
 def check_required_sentence(full_text: str, required=REQUIRED_SENTENCE):
@@ -339,7 +358,7 @@ def check_required_sentence(full_text: str, required=REQUIRED_SENTENCE):
 
     if not differences:
         status = "ok"
-    elif score >= 0.75:
+    elif score >= 0.5:
         status = "likely_typo"
     else:
         status = "not_found"
