@@ -703,13 +703,31 @@ def call_ai_verification(api_key, base_url, model, ocr_text):
 
 
 # =============================================================================
+# Logo-templates: GEEN Streamlit-cache meer.
+# =============================================================================
+# Eerdere versies gebruikten @st.cache_resource, maar dat veroorzaakte een# hardnekkige KeyError: cache_resource bust alleen op wijzigingen in de
+# broncode van de gedecoreerde functie zelf — niet op wijzigingen in de
+# hulpfunctie load_logo_templates die eronder ligt. Na een deploy waarbij
+# load_logo_templates nieuwe keys kreeg (bv. "soft"), bleef de oude gecachte
+# lijst met dicts in het geheugen van de container hangen, waardoor de nieuwe
+# code op een ontbrekende key crashte.
+#
+# Het laden van 12 kleine PNG's + Canny kost ~50 ms — verwaarloosbaar naast de
+# OCR die er daarna toch over de pagina heen gaat. Betrouwbaarheid > micro-
+# optimalisatie, dus we laden de templates elke run opnieuw in.
+_logo_templates_cache = None
+
+
+def get_logo_templates(force_reload: bool = False):
+    global _logo_templates_cache
+    if force_reload or _logo_templates_cache is None:
+        _logo_templates_cache = load_logo_templates(ASSETS_FOLDER)
+    return _logo_templates_cache
+
+
+# =============================================================================
 # Volledige analyse
 # =============================================================================
-
-@st.cache_resource(show_spinner=False)
-def get_logo_templates():
-    return load_logo_templates(ASSETS_FOLDER)
-
 
 def analyze_file(uploaded_file, ai_config=None):
     results = {"errors": []}
@@ -875,6 +893,10 @@ def main():
                     st.write(f"• {t['name']}")
         else:
             st.error("Geen logo's gevonden in de 'assets' map")
+
+        if st.button("🔄 Logo's opnieuw inladen"):
+            get_logo_templates(force_reload=True)
+            st.success("Logo's opnieuw ingeladen.")
 
         st.markdown("---")
         st.markdown("**Optionele AI-verfijning**")
