@@ -898,8 +898,10 @@ def check_print_ready_pdf(pdf_bytes: bytes) -> dict:
 # =============================================================================
 
 def call_ai_verification(api_key, base_url, model, ocr_text):
-    if not REQUESTS_AVAILABLE or not api_key:
-        return None
+    if not REQUESTS_AVAILABLE:
+        return {"error": "Het Python-package 'requests' is niet beschikbaar op de server."}
+    if not api_key:
+        return {"error": "Geen API-sleutel opgegeven."}
 
     system_prompt = (
         "Je bent een strikte Nederlandse taalcontroleur voor CA (Cocaine Anonymous) "
@@ -1162,12 +1164,19 @@ def main():
             "(bv. Groq) worden de tekstcontroles extra verfijnd. Zonder sleutel werkt "
             "alles puur op OCR + regels."
         )
+        if not REQUESTS_AVAILABLE:
+            st.warning(
+                "⚠️ Het Python-package 'requests' is niet beschikbaar op deze server — "
+                "AI-verfijning kan daardoor niet werken, ook niet met een geldige "
+                "sleutel. Controleer of 'requests' in requirements.txt staat en of de "
+                "laatste deploy geslaagd is."
+            )
         use_ai = st.checkbox("AI-verfijning gebruiken", value=False)
         ai_config = None
         if use_ai:
             api_key = st.text_input("API-sleutel", type="password")
             base_url = st.text_input("API base URL", value="https://api.groq.com/openai/v1")
-            model = st.text_input("Model", value="llama-3.1-8b-instant")
+            model = st.text_input("Model", value="openai/gpt-oss-20b")
             if api_key:
                 ai_config = {"api_key": api_key, "base_url": base_url, "model": model}
 
@@ -1340,11 +1349,13 @@ def main():
             if not cmyk_ok or not pr["has_bleed"]:
                 st.info(f"Nog niet volledig printklaar? Gebruik de [bleed & CMYK-tool]({BLEED_TOOL_URL}).")
 
-        if results.get("ai_result") and not results["ai_result"].get("error"):
-            st.markdown("#### 🤖 AI-verfijning (aanvullend)")
-            st.json(results["ai_result"])
-        elif results.get("ai_result", {}).get("error"):
-            st.caption(f"AI-verfijning mislukt: {results['ai_result']['error']}")
+        ai_result = results.get("ai_result")
+        if ai_result:
+            if ai_result.get("error"):
+                st.caption(f"AI-verfijning mislukt: {ai_result['error']}")
+            else:
+                st.markdown("#### 🤖 AI-verfijning (aanvullend)")
+                st.json(ai_result)
 
         with st.expander("📄 Ruwe OCR-tekst (debug)"):
             st.text(results.get("ocr_text", "(geen tekst)"))

@@ -121,7 +121,11 @@ praktijk te traag blijkt.
 Alles werkt **zonder enige API-sleutel**. Optioneel kan in de zijbalk een
 OpenAI-compatibele API-sleutel (bv. een gratis Groq-sleutel) worden ingevuld
 om de tekstcontroles aanvullend te laten verfijnen door een taalmodel — dit
-is nooit verplicht.
+is nooit verplicht. Het standaardmodel is `openai/gpt-oss-20b` (Groq's
+aanbevolen vervanger nadat `llama-3.1-8b-instant` op 16 augustus 2026 is
+stopgezet). Providers zetten modellen wel vaker stil; geeft de AI-verfijning
+een foutmelding terug, controleer dan eerst of het ingevulde modelnaam nog
+bestaat bij de gekozen provider.
 
 ## Lokaal draaien
 
