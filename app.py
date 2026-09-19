@@ -1,9 +1,10 @@
 """
-CA Drukwerk Checker v2
-=======================
-Controleert Nederlandstalig CA PI-drukwerk (flyers/posters) op:
-  - Verplicht: gebruik van een officieel Nederlands CA-logo
-  - Verplicht: de letterlijke 6de-Traditie-zin (met spelfouttolerantie)
+CA Drukwerk Checker v4 — meertalig
+===================================
+Controleert CA PI-drukwerk (flyers/posters) in meerdere talen op:
+  - Verplicht: gebruik van een officieel CA-logo, onveranderd
+  - Verplicht: de letterlijke verplichte traditie-zin (met spelfouttolerantie),
+    voor talen waarvoor deze geverifieerd is geconfigureerd
   - Aanbevolen: "Georganiseerd door", adres/locatie/Zoomlink, datum & tijd
   - Waarschuwing: volledige namen (Traditie 12 - anonimiteit)
   - Print-gereedheid: CMYK + snijranden (alleen betrouwbaar te checken bij PDF)
@@ -11,6 +12,9 @@ Controleert Nederlandstalig CA PI-drukwerk (flyers/posters) op:
 Werkt volledig zonder externe API's (OCR + regex + fuzzy matching).
 Optioneel kan een gratis/eigen OpenAI-compatibele API-sleutel worden
 toegevoegd om de tekstcontrole te verfijnen (niet verplicht).
+
+Taal- en interfaceteksten staan in i18n.py — zie dat bestand om een taal
+aan te vullen of toe te voegen.
 """
 
 import io
@@ -26,6 +30,9 @@ import numpy as np
 import streamlit as st
 from PIL import Image
 import cv2
+
+import i18n
+from i18n import LANGUAGES, DEFAULT_LANGUAGE, TESSERACT_LANG, get_language_config, t
 
 # ---- Optionele afhankelijkheden -------------------------------------------------
 try:
@@ -53,19 +60,8 @@ except ImportError:
 
 st.set_page_config(page_title="CA Drukwerk Checker", page_icon="✅", layout="wide")
 
-REQUIRED_SENTENCE = (
-    "In de geest van de 6de Traditie is C.A. niet verbonden aan kerken, "
-    "sekten, politieke of hulpverlenende instanties."
-)
-
 BLEED_TOOL_URL = "https://bleed-cmyk-builderpy-ecaauj8zkjwrhhivxmilqq.streamlit.app/"
-
-# Officiële contactgegevens van CA Holland. Pas dit aan als deze ooit wijzigen —
-# de rest van de controle-logica hoeft dan niet aangepast te worden.
-CORRECT_PHONE_DIGITS = "0610192770"          # 06 101 92770, alleen cijfers
-CORRECT_PHONE_DISPLAY = "06 101 92770"
-CORRECT_EMAIL = "info@ca-holland.nl"
-CORRECT_WEBSITE_DOMAIN = "ca-holland.nl"
+TRANSLATION_REQUEST_EMAIL = "picazuid@gmail.com"
 
 # OCR/typfout-gevoelige tekens die vaak verward worden met cijfers
 _DIGIT_LOOKALIKES = {
@@ -82,18 +78,6 @@ STANDARD_SIZES_MM = [
     (210, 297), (297, 210),  # A4
     (297, 420), (420, 297),  # A3
 ]
-
-# Woorden die nooit als (deel van) een persoonsnaam geteld mogen worden
-NAME_STOPWORDS = {
-    "januari", "februari", "maart", "april", "mei", "juni", "juli", "augustus",
-    "september", "oktober", "november", "december",
-    "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag",
-    "nederland", "belgie", "belgië", "cocaine", "anonymous", "anoniem", "traditie",
-    "georganiseerd", "door", "adres", "locatie", "zoom", "meeting", "datum", "tijd",
-    "regio", "zuid", "noord", "oost", "west", "flyer", "poster", "welkom", "iedereen",
-    "open", "gesloten", "meeting", "bijeenkomst", "commissie", "comite", "comité",
-    "public", "information", "hoop", "vertrouwen", "moed",
-}
 
 
 # =============================================================================
@@ -139,16 +123,16 @@ def load_uploaded_file(uploaded_file):
 #     patroon of kleurverloop doorheen het logo schijnen
 #   - alles BUITEN de buitenste cirkel is vrij (dat hoort niet bij het logo)
 #
-# De referentie komt uit twee (of vier) vervangbare PDF-bestanden in
-# LOGO_REFERENCE_FOLDER: telkens een 'inner'- en 'outer'-TM/®-variant (het
-# ™- of ®-teken staat resp. binnen of buiten de buitenste ring). Een andere
-# taal/regio kan die PDF's simpelweg vervangen door hun eigen officiële
-# logo-PDF's, met dezelfde bestandsnaamconventie:
+# De referentie komt uit twee (of vier) vervangbare PDF-bestanden per taal, in
+# logo_reference/<taalcode>/: telkens een 'inner'- en 'outer'-TM/®-variant
+# (het ™- of ®-teken staat resp. binnen of buiten de buitenste ring). Een
+# andere taal/regio kan die PDF's simpelweg vervangen door hun eigen
+# officiële logo-PDF's, met dezelfde bestandsnaamconventie:
 #   <iets>_TM_inner.pdf / <iets>_TM_outer.pdf / <iets>_R_inner.pdf / <iets>_R_outer.pdf
 # (matching is niet hoofdlettergevoelig en zoekt naar 'inner'/'outer' en
 # 'tm'/'r' als losse woorden in de bestandsnaam)
 
-LOGO_REFERENCE_FOLDER = Path(__file__).parent / "logo_reference"
+LOGO_REFERENCE_ROOT = Path(__file__).parent / "logo_reference"
 LOGO_REFERENCE_DPI = 100          # resolutie waarop de PDF-referentie gerasterd wordt
 LOGO_REFERENCE_FIXED_SIZE = 220   # vaste werkgrootte voor alle vergelijkingen (snelheid + consistentie)
 LOGO_REFERENCE_PAD = 1.05         # kleine marge rond de buitenste cirkel bij het uitsnijden
@@ -583,12 +567,13 @@ def verify_logo_in_page(page_rgb_array, references, shape_threshold=0.20):
 # OCR
 # =============================================================================
 
-def extract_text(pil_image: Image.Image) -> str:
+def extract_text(pil_image: Image.Image, tesseract_lang: str = "nld+eng") -> str:
     if not TESSERACT_AVAILABLE:
         return ""
     try:
-        return pytesseract.image_to_string(pil_image, lang="nld+eng")
+        return pytesseract.image_to_string(pil_image, lang=tesseract_lang)
     except pytesseract.TesseractError:
+        # Taalpakket ontbreekt mogelijk op de server (bv. een zeldzamere taal) — val terug op Engels.
         try:
             return pytesseract.image_to_string(pil_image, lang="eng")
         except Exception:
@@ -611,37 +596,36 @@ def _tokenize(text: str):
     return re.findall(r"\S+", text)
 
 
-# Bekende, geaccepteerde schrijfvarianten die NIET als afwijking gemeld mogen
-# worden (uitbreidbaar). Sleutel = variant (na het strippen van 1 trailing
-# leesteken en lowercasen), waarde = canonieke vorm waarnaar genormaliseerd
-# wordt. Echte spelfouten die hier niet in staan blijven gewoon gevlagd.
-WORD_VARIANT_MAP = {
-    "6e": "6de",       # "6de Traditie" mag ook als "6e traditie" geschreven worden
-    "ca": "c.a",       # "C.A." mag ook zonder punten als "CA" geschreven worden
-}
-
-
-def _norm_word(w: str) -> str:
+def _norm_word(w: str, word_variant_map: dict) -> str:
     """
     Normaliseert een woord voor vergelijking: lowercase, één trailing
     leesteken (punt/komma/puntkomma/dubbele punt) genegeerd — verschillen
     in eindpunctuatie zijn geen taalfout — en bekende schrijfvarianten
-    (zie WORD_VARIANT_MAP) omgezet naar hun canonieke vorm.
+    (per taal geconfigureerd, zie i18n.LANGUAGE_CONFIG) omgezet naar hun
+    canonieke vorm.
     """
     core = w.lower()
     if core and core[-1] in ".,;:":
         core = core[:-1]
-    return WORD_VARIANT_MAP.get(core, core)
+    return word_variant_map.get(core, core)
 
 
-def check_required_sentence(full_text: str, required=REQUIRED_SENTENCE):
+def check_required_sentence(full_text: str, required, word_variant_map: dict = None):
     """
     Zoekt de verplichte zin woord-voor-woord in de OCR-tekst en rapporteert
     per verschillend woord wat er gevonden werd t.o.v. wat er had moeten staan.
     Dit voorkomt dat losse spelfouten wegvallen in een score over de hele
     string (bij lange zinnen drukt correcte tekst rondom een fout de score
     anders kunstmatig omhoog).
+
+    Als 'required' None is (deze taal heeft nog geen geverifieerde officiële
+    tekst — zie i18n.LANGUAGE_CONFIG), wordt de controle overgeslagen i.p.v.
+    tegen een geraden tekst te toetsen.
     """
+    if required is None:
+        return {"status": "not_configured", "score": 0.0, "snippet": None, "differences": []}
+
+    word_variant_map = word_variant_map or {}
     text_words = _tokenize(normalize_text(full_text))
     req_words = _tokenize(required)
     req_len = len(req_words)
@@ -659,8 +643,8 @@ def check_required_sentence(full_text: str, required=REQUIRED_SENTENCE):
             window = text_words[i:i + size]
             sm = SequenceMatcher(
                 None,
-                [_norm_word(w) for w in window],
-                [_norm_word(w) for w in req_words],
+                [_norm_word(w, word_variant_map) for w in window],
+                [_norm_word(w, word_variant_map) for w in req_words],
             )
             match_count = sum(block.size for block in sm.get_matching_blocks())
             if match_count > best_match_count:
@@ -672,8 +656,8 @@ def check_required_sentence(full_text: str, required=REQUIRED_SENTENCE):
 
     sm = SequenceMatcher(
         None,
-        [_norm_word(w) for w in best_window],
-        [_norm_word(w) for w in req_words],
+        [_norm_word(w, word_variant_map) for w in best_window],
+        [_norm_word(w, word_variant_map) for w in req_words],
     )
     differences = []
     for tag, i1, i2, j1, j2 in sm.get_opcodes():
@@ -729,19 +713,20 @@ def check_date_time(full_text: str) -> dict:
     }
 
 
-def check_full_names(full_text: str):
+def check_full_names(full_text: str, name_stopwords: set = None):
     """
     Heuristische detectie van volledige namen (Voornaam Achternaam).
     'Voornaam A.' (initiaal) wordt NIET gevlagd, conform de gangbare
     beknopte, anonimiteit-respecterende schrijfwijze.
     Retourneert lijst met gevonden kandidaten (kan false positives bevatten).
     """
+    name_stopwords = name_stopwords or set()
     # Patroon: Hoofdletterwoord + spatie + Hoofdletterwoord (geen enkele letter+punt)
     pattern = r"\b([A-Z][a-zà-ÿ]{2,})\s+([A-Z][a-zà-ÿ]{2,})\b"
     candidates = []
     for match in re.finditer(pattern, full_text):
         first, last = match.group(1), match.group(2)
-        if first.lower() in NAME_STOPWORDS or last.lower() in NAME_STOPWORDS:
+        if first.lower() in name_stopwords or last.lower() in name_stopwords:
             continue
         # Uitsluiten: begin van een zin waar het tweede woord ook een gewoon zelfstandig
         # naamwoord kan zijn is niet volledig te filteren met regex alleen -> als kandidaat tonen,
@@ -764,6 +749,11 @@ def check_full_names(full_text: str):
 # zijn moeten ze correct zijn. Opmaakvarianten (spaties/streepjes/hoofdletters/
 # met of zonder www./https://) zijn toegestaan; een verkeerd cijfer, een typfout
 # in het domein, of een andere aanbieder is dat niet.
+#
+# Voor elke check geldt: als de officiële waarde voor de gekozen taal/regio
+# nog niet geconfigureerd is (None in i18n.LANGUAGE_CONFIG), wordt de
+# controle overgeslagen ("not_configured") i.p.v. tegen een verzonnen waarde
+# te toetsen.
 
 def _normalize_phone_candidate(raw: str) -> str:
     """Vervangt cijfer-lookalike letters (O/o, l/I, S, B) door hun cijfer en
@@ -773,13 +763,16 @@ def _normalize_phone_candidate(raw: str) -> str:
     return re.sub(r"[^\d]", "", mapped)
 
 
-def check_helpline(full_text: str) -> dict:
+def check_helpline(full_text: str, correct_phone_digits: str = None) -> dict:
+    if correct_phone_digits is None:
+        return {"present": False, "correct": None, "found": None, "configured": False}
+
     # De check is gekoppeld aan het label 'hulplijn' zelf (tolerant voor kleine
     # schrijffouten zoals 'hulp lijn'); zonder dat label wordt dit veld als
     # niet-aanwezig beschouwd (conform "wanneer de hulplijn erop staat").
-    label_match = re.search(r"hulp\s*lijn\s*[:\-]?\s*", full_text, re.IGNORECASE)
+    label_match = re.search(r"hulp\s*lijn\s*[:\-]?\s*|help\s*line\s*[:\-]?\s*", full_text, re.IGNORECASE)
     if label_match is None:
-        return {"present": False, "correct": None, "found": None}
+        return {"present": False, "correct": None, "found": None, "configured": True}
 
     # Beperk het zoekgebied tot de rest van DEZELFDE regel als het label, zodat
     # een regeleinde + het begin van het volgende veld (bv. 'info@...') niet
@@ -792,28 +785,34 @@ def check_helpline(full_text: str) -> dict:
 
     if candidate_match is None:
         # Label 'hulplijn' staat er wel, maar er volgt geen herkenbaar nummer
-        return {"present": True, "correct": False, "found": None}
+        return {"present": True, "correct": False, "found": None, "configured": True}
 
     raw_found = candidate_match.group(0).strip()
     normalized = _normalize_phone_candidate(raw_found)
-    correct = normalized == CORRECT_PHONE_DIGITS
+    correct = normalized == correct_phone_digits
 
-    return {"present": True, "correct": correct, "found": raw_found}
+    return {"present": True, "correct": correct, "found": raw_found, "configured": True}
 
 
-def check_email(full_text: str) -> dict:
+def check_email(full_text: str, correct_email: str = None) -> dict:
+    if correct_email is None:
+        return {"present": False, "correct": None, "found": None, "configured": False}
+
     match = re.search(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", full_text)
     if not match:
-        return {"present": False, "correct": None, "found": None}
+        return {"present": False, "correct": None, "found": None, "configured": True}
 
     raw_found = match.group(0)
     normalized = raw_found.strip().lower().rstrip(".,;:")
-    correct = normalized == CORRECT_EMAIL
+    correct = normalized == correct_email
 
-    return {"present": True, "correct": correct, "found": raw_found}
+    return {"present": True, "correct": correct, "found": raw_found, "configured": True}
 
 
-def check_website(full_text: str) -> dict:
+def check_website(full_text: str, correct_domain: str = None) -> dict:
+    if correct_domain is None:
+        return {"present": False, "correct": None, "found": None, "configured": False}
+
     # Alleen tellen als het duidelijk een URL/website-vermelding is (begint met
     # www. of http(s)://), om te voorkomen dat het domein van het e-mailadres
     # dubbel als 'website' wordt geteld. Sluithaakjes/aanhalingstekens (bv. uit
@@ -821,7 +820,7 @@ def check_website(full_text: str) -> dict:
     # wordt de hele link inclusief opmaak als 1 token ingeslikt.
     match = re.search(r"(https?://[^\s\)\]\}\"'<>]+|www\.[^\s\)\]\}\"'<>]+)", full_text, re.IGNORECASE)
     if not match:
-        return {"present": False, "correct": None, "found": None}
+        return {"present": False, "correct": None, "found": None, "configured": True}
 
     raw_found = match.group(0)
     domain = raw_found.lower()
@@ -829,9 +828,9 @@ def check_website(full_text: str) -> dict:
     domain = re.sub(r"^www\.", "", domain)
     domain = domain.split("/")[0]
     domain = domain.rstrip(".,;:")
-    correct = domain == CORRECT_WEBSITE_DOMAIN
+    correct = domain == correct_domain
 
-    return {"present": True, "correct": correct, "found": raw_found}
+    return {"present": True, "correct": correct, "found": raw_found, "configured": True}
 
 
 # =============================================================================
@@ -943,8 +942,9 @@ def call_ai_verification(api_key, base_url, model, ocr_text):
 # =============================================================================
 
 @st.cache_resource(show_spinner=False)
-def get_logo_references():
-    return load_logo_references(LOGO_REFERENCE_FOLDER)
+def get_logo_references(lang: str):
+    folder_name = get_language_config(lang).get("logo_folder", lang)
+    return load_logo_references(LOGO_REFERENCE_ROOT / folder_name)
 
 
 def compute_overall_percent(results) -> int:
@@ -974,7 +974,14 @@ def compute_overall_percent(results) -> int:
     else:
         logo_score = float(_logo_score_to_percent(logo.get("shape_score", 0.0)))
 
-    sentence_score = results["sentence"]["score"] * 100
+    # 'not_configured' betekent: er is voor deze taal nog geen geverifieerde
+    # officiële zin (zie i18n.LANGUAGE_CONFIG) — dan wordt deze component
+    # neutraal (100) meegeteld i.p.v. de score kunstmatig naar 0 te trekken,
+    # want dat zou geen echte tekortkoming van het drukwerk zijn.
+    if results["sentence"]["status"] == "not_configured":
+        sentence_score = 100.0
+    else:
+        sentence_score = results["sentence"]["score"] * 100
 
     contact_keys = ("helpline", "email", "website")
     present = [results[k] for k in contact_keys if results[k]["present"]]
@@ -984,8 +991,9 @@ def compute_overall_percent(results) -> int:
     return round(overall)
 
 
-def analyze_file(uploaded_file, ai_config=None):
+def analyze_file(uploaded_file, lang: str, ai_config=None):
     results = {"errors": []}
+    lang_config = get_language_config(lang)
 
     page_img, is_pdf, pdf_bytes = load_uploaded_file(uploaded_file)
 
@@ -998,30 +1006,33 @@ def analyze_file(uploaded_file, ai_config=None):
     page_array = np.array(page_img)
 
     # --- 1. Logo-verificatie ---
-    references = get_logo_references()
+    references = get_logo_references(lang)
     if not references:
         results["logo"] = {
             "found": False, "compliant": False, "shape_score": 0.0, "reference_name": None,
             "gap_uniform": None, "ink_uniform": None, "aspect_ok": None,
-            "note": "Geen referentie-PDF's gevonden in de 'logo_reference' map.",
+            "note": f"Geen referentie-PDF's gevonden in 'logo_reference/{lang_config['logo_folder']}/'.",
         }
     else:
         results["logo"] = verify_logo_in_page(page_array, references)
 
     # --- 2. OCR ---
-    ocr_text = extract_text(page_img)
+    tesseract_lang = TESSERACT_LANG.get(lang, "eng")
+    ocr_text = extract_text(page_img, tesseract_lang)
     results["ocr_text"] = ocr_text
     results["ocr_available"] = TESSERACT_AVAILABLE
 
     # --- 3. Tekstcontroles ---
-    results["sentence"] = check_required_sentence(ocr_text)
+    results["sentence"] = check_required_sentence(
+        ocr_text, lang_config["required_sentence"], lang_config["word_variant_map"]
+    )
     results["organized_by"] = check_organized_by(ocr_text)
     results["location"] = check_location(ocr_text)
     results["date_time"] = check_date_time(ocr_text)
-    results["full_names"] = check_full_names(ocr_text)
-    results["helpline"] = check_helpline(ocr_text)
-    results["email"] = check_email(ocr_text)
-    results["website"] = check_website(ocr_text)
+    results["full_names"] = check_full_names(ocr_text, lang_config["name_stopwords"])
+    results["helpline"] = check_helpline(ocr_text, lang_config["correct_phone_digits"])
+    results["email"] = check_email(ocr_text, lang_config["correct_email"])
+    results["website"] = check_website(ocr_text, lang_config["correct_website_domain"])
 
     # --- 4. Optionele AI-verfijning ---
     if ai_config and ai_config.get("api_key") and ocr_text.strip():
@@ -1051,9 +1062,10 @@ def analyze_file(uploaded_file, ai_config=None):
         results[key]["present"] and not results[key]["correct"]
         for key in ("helpline", "email", "website")
     )
+    sentence_ok_for_approval = results["sentence"]["status"] in ("ok", "not_configured")
     results["approved"] = (
         results["logo"]["compliant"]
-        and results["sentence"]["status"] == "ok"
+        and sentence_ok_for_approval
         and not contact_details_wrong
     )
     results["overall_percent"] = compute_overall_percent(results)
@@ -1125,84 +1137,75 @@ def _logo_score_to_percent(raw_score: float, threshold: float = 0.20, ceiling: f
 
 
 def main():
-    st.title("🖼️ CA Drukwerk Checker")
-    st.caption(
-        "Controleert Nederlandstalige CA-flyers, posters en ander drukwerk op de "
-        "vereisten voor goedkeuring door de PI-commissie."
-    )
-
-    if not TESSERACT_AVAILABLE:
-        st.warning(
-            "⚠️ Tesseract OCR is niet beschikbaar op deze server. Tekstcontroles "
-            "(6de-Traditie-zin, organisator, locatie, datum/tijd, namen) kunnen niet "
-            "worden uitgevoerd totdat dit is geïnstalleerd. Zie README voor installatie-instructies."
-        )
-    if not PYMUPDF_AVAILABLE:
-        st.info("ℹ️ PyMuPDF ontbreekt — PDF-ondersteuning en print-gereedheidscontrole zijn uitgeschakeld.")
+    # Taalkeuze staat bovenaan de sidebar en bepaalt de rest van de pagina.
+    # Bewaard in session_state zodat de keuze niet terugspringt bij elke rerun.
+    if "lang" not in st.session_state:
+        st.session_state["lang"] = DEFAULT_LANGUAGE
 
     with st.sidebar:
-        st.header("⚙️ Instellingen")
-        st.markdown("**Officiële logo-referentie:**")
-        references = get_logo_references()
+        lang_codes = list(LANGUAGES.keys())
+        current_index = lang_codes.index(st.session_state["lang"]) if st.session_state["lang"] in lang_codes else 0
+        selected = st.selectbox(
+            t("language_label", st.session_state["lang"]),
+            options=lang_codes,
+            format_func=lambda code: LANGUAGES[code],
+            index=current_index,
+        )
+        st.session_state["lang"] = selected
+
+    lang = st.session_state["lang"]
+    lang_config = get_language_config(lang)
+
+    st.title(t("app_title", lang))
+    st.caption(t("app_caption", lang))
+
+    if not TESSERACT_AVAILABLE:
+        st.warning(t("tesseract_warning", lang))
+    if not PYMUPDF_AVAILABLE:
+        st.info(t("pymupdf_info", lang))
+
+    with st.sidebar:
+        st.header(t("sidebar_settings_header", lang))
+        st.markdown(t("sidebar_logo_ref_label", lang))
+        references = get_logo_references(lang)
         if references:
-            st.success(f"{len(references)} referentiebestand(en) geladen")
-            with st.expander("Toon geladen referenties"):
+            st.success(t("sidebar_logo_loaded", lang, count=len(references)))
+            with st.expander(t("sidebar_logo_show_refs", lang)):
                 for r in references:
                     st.write(f"• {r['name']}  ({r['mark'].upper()}, {r['position']})")
-            st.caption(
-                "Andere taal/regio? Vervang de PDF's in de map `logo_reference/` door "
-                "de officiële logo-PDF van dat land (zelfde naamconventie met 'inner'/"
-                "'outer' en 'TM'/'R') — geen codewijziging nodig."
-            )
+            st.caption(t("sidebar_logo_replace_hint", lang))
         else:
-            st.error("Geen referentie-PDF's gevonden in de 'logo_reference' map")
+            st.error(t("sidebar_logo_none_found", lang))
 
         st.markdown("---")
-        st.markdown("**Optionele AI-verfijning**")
-        st.caption(
-            "Niet verplicht. Met een gratis of eigen OpenAI-compatibele API-sleutel "
-            "(bv. Groq) worden de tekstcontroles extra verfijnd. Zonder sleutel werkt "
-            "alles puur op OCR + regels."
-        )
+        st.markdown(t("sidebar_ai_header", lang))
+        st.caption(t("sidebar_ai_caption", lang))
         if not REQUESTS_AVAILABLE:
-            st.warning(
-                "⚠️ Het Python-package 'requests' is niet beschikbaar op deze server — "
-                "AI-verfijning kan daardoor niet werken, ook niet met een geldige "
-                "sleutel. Controleer of 'requests' in requirements.txt staat en of de "
-                "laatste deploy geslaagd is."
-            )
-        use_ai = st.checkbox("AI-verfijning gebruiken", value=False)
+            st.warning(t("sidebar_ai_requests_warning", lang))
+        use_ai = st.checkbox(t("sidebar_ai_checkbox", lang), value=False)
         ai_config = None
         if use_ai:
-            api_key = st.text_input("API-sleutel", type="password")
-            base_url = st.text_input("API base URL", value="https://api.groq.com/openai/v1")
-            model = st.text_input("Model", value="openai/gpt-oss-20b")
+            api_key = st.text_input(t("sidebar_ai_apikey_label", lang), type="password")
+            base_url = st.text_input(t("sidebar_ai_baseurl_label", lang), value="https://api.groq.com/openai/v1")
+            model = st.text_input(t("sidebar_ai_model_label", lang), value="openai/gpt-oss-20b")
             if api_key:
                 ai_config = {"api_key": api_key, "base_url": base_url, "model": model}
 
         st.markdown("---")
-        st.markdown("### 📝 Eisen voor goedkeuring")
-        st.markdown(
-            "**Verplicht:**\n"
-            "- ✅ Officieel logo, ONVERANDERD gebruikt: geen vervorming/andere "
-            "verhoudingen, geen effecten, en zowel de inkt als de achtergrond "
-            "binnen de buitenste cirkel in 1 egale kleur\n"
-            "- ✅ 6de-Traditie-zin (correct)\n"
-            "- ✅ Correcte hulplijn/e-mail/website, *indien vermeld*\n\n"
-            "**Aanbevolen (indien van toepassing):**\n"
-            "- Georganiseerd door\n"
-            "- Adres/locatie of Zoomlink\n"
-            "- Datum en tijd\n\n"
-            "**Let op (Traditie 12):**\n"
-            "- Geen volledige namen — gebruik voornaam + eerste letter achternaam"
-        )
+        st.markdown(t("sidebar_requirements_header", lang))
+        st.markdown(t("sidebar_requirements_body", lang))
         st.markdown("---")
-        st.markdown(f"**Nog niet printklaar?** Gebruik de [bleed & CMYK-tool]({BLEED_TOOL_URL}).")
+        st.markdown(t("sidebar_bleed_tool_hint", lang, url=BLEED_TOOL_URL))
+
+        st.markdown("---")
+        st.markdown(t("sidebar_translation_request_header", lang))
+        st.caption(t("sidebar_translation_request_body", lang))
+        st.markdown(f"📧 [{TRANSLATION_REQUEST_EMAIL}](mailto:{TRANSLATION_REQUEST_EMAIL})")
 
     uploaded_file = st.file_uploader(
-        "Upload een flyer, poster of ander drukwerk",
+        t("uploader_label", lang),
         type=["png", "jpg", "jpeg", "pdf"],
-        help="PDF wordt aangeraden voor een betrouwbare CMYK/snijrand-check.",
+        help=t("uploader_help", lang),
     )
 
     if uploaded_file is None:
@@ -1211,18 +1214,18 @@ def main():
     col1, col2 = st.columns([1, 1])
 
     with col1:
-        st.subheader("📤 Geüpload bestand")
+        st.subheader(t("uploaded_file_header", lang))
         if uploaded_file.name.lower().endswith(".pdf"):
-            st.info(f"PDF: {uploaded_file.name}")
+            st.info(t("uploaded_file_pdf_label", lang, name=uploaded_file.name))
         else:
             st.image(Image.open(uploaded_file), use_container_width=True)
         uploaded_file.seek(0)
 
-    with st.spinner("🔍 Analyseren..."):
-        results = analyze_file(uploaded_file, ai_config)
+    with st.spinner(t("analyzing_spinner", lang)):
+        results = analyze_file(uploaded_file, lang, ai_config)
 
     with col2:
-        st.subheader("📊 Resultaat")
+        st.subheader(t("result_header", lang))
 
         if results.get("errors"):
             for e in results["errors"]:
@@ -1231,134 +1234,124 @@ def main():
 
         overall_percent = results.get("overall_percent", 100 if results["approved"] else 0)
         if overall_percent <= 60:
-            st.error(f"❌ Voldoet NIET aan de eisen ({overall_percent}%)")
+            st.error(t("status_fail", lang, percent=overall_percent))
         elif overall_percent < 90:
-            st.warning(f"⚠️ Voldoet gedeeltelijk aan de eisen ({overall_percent}%) — controleer de afwijkingen hieronder")
+            st.warning(t("status_partial", lang, percent=overall_percent))
         else:
-            st.success(f"✅ Voldoet aan de eisen ({overall_percent}%)")
+            st.success(t("status_pass", lang, percent=overall_percent))
 
-        st.markdown("#### Verplichte controles")
+        st.markdown(t("mandatory_checks_header", lang))
 
         logo = results["logo"]
         shape_percent = _logo_score_to_percent(logo["shape_score"])
-        ref_label = f"vergeleken met: {logo['reference_name']}" if logo["reference_name"] else "geen kandidaat gevonden"
-        render_score_circle("Logo — vormgelijkenis", shape_percent, ref_label)
+        ref_label = (
+            t("logo_shape_compared_to", lang, name=logo["reference_name"])
+            if logo["reference_name"] else t("logo_shape_no_candidate", lang)
+        )
+        render_score_circle(t("logo_shape_label", lang), shape_percent, ref_label)
 
         if not logo["found"]:
-            st.caption(
-                "⚠️ Onder de detectiedrempel — geen betrouwbare match. Dit kan kloppen "
-                "(geen logo aanwezig), maar controleer bij twijfel visueel of het logo "
-                "er echt niet op staat, vooral bij een drukke achtergrond of lage resolutie."
-            )
+            st.caption(t("logo_not_found_caption", lang))
         else:
             gap_ok = logo["gap_uniform"]
             ink_ok = logo["ink_uniform"]
             aspect_ok = logo["aspect_ok"]
 
-            gap_detail = (
-                f"{round((logo['gap_fraction'] or 0) * 100)}% van de achtergrond binnen de "
-                f"buitenste cirkel is 1 egale kleur" + (f" ({logo['gap_color']})" if logo.get("gap_color") else "")
-            )
-            render_check_line("", "Achtergrond binnen logo is 1 egale kleur (geen foto/patroon zichtbaar)", gap_ok, gap_detail)
+            color_suffix = f" ({logo['gap_color']})" if logo.get("gap_color") else ""
+            gap_detail = t("logo_gap_detail", lang, pct=round((logo["gap_fraction"] or 0) * 100), color=color_suffix)
+            render_check_line("", t("logo_gap_label", lang), gap_ok, gap_detail)
 
-            ink_detail = (
-                f"{round((logo['ink_fraction'] or 0) * 100)}% van de inkt (ring/letters/tekst) is 1 egale kleur"
-                + (f" ({logo['ink_color']})" if logo.get("ink_color") else "")
-            )
-            render_check_line("", "Inkt van het logo is 1 egale kleur (geen effecten)", ink_ok, ink_detail)
+            ink_color_suffix = f" ({logo['ink_color']})" if logo.get("ink_color") else ""
+            ink_detail = t("logo_ink_detail", lang, pct=round((logo["ink_fraction"] or 0) * 100), color=ink_color_suffix)
+            render_check_line("", t("logo_ink_label", lang), ink_ok, ink_detail)
 
             aspect_detail = (
-                f"as-verhouding {logo['aspect_ratio']}"
-                if logo.get("aspect_ratio") is not None else "kon niet worden bepaald"
+                t("logo_aspect_detail_known", lang, ratio=logo["aspect_ratio"])
+                if logo.get("aspect_ratio") is not None else t("logo_aspect_detail_unknown", lang)
             )
-            render_check_line("", "Geen vervorming — juiste verhoudingen (cirkelvormig)", bool(aspect_ok), aspect_detail)
+            render_check_line("", t("logo_aspect_label", lang), bool(aspect_ok), aspect_detail)
 
             if not logo["compliant"]:
-                st.warning(
-                    "⚠️ Het logo is gevonden, maar wijkt af van het officiële ontwerp "
-                    "(zie bovenstaande deelcontroles). Volgens de merkrichtlijnen mag het "
-                    "logo niet vervormd, voorzien van effecten, of op een niet-egale "
-                    "achtergrond geplaatst worden."
-                )
+                st.warning(t("logo_noncompliant_warning", lang))
 
         sentence = results["sentence"]
         sentence_percent = int(round(sentence["score"] * 100))
-        if sentence["status"] == "ok":
-            render_score_circle("6de-Traditie-zin", sentence_percent, "correct aanwezig")
+        if sentence["status"] == "not_configured":
+            st.info(t("sentence_not_configured", lang))
+        elif sentence["status"] == "ok":
+            render_score_circle(t("sentence_label", lang), sentence_percent, t("sentence_ok_detail", lang))
         elif sentence["status"] == "likely_typo":
-            render_score_circle("6de-Traditie-zin", sentence_percent, "wijkt af op onderstaande punten")
-            st.caption(
-                "Let op: dit kunnen echte spelfouten op het drukwerk zijn, maar OCR "
-                "leest soms ook correct gespelde tekst verkeerd (bv. bij een gestileerd "
-                "lettertype). Controleer onderstaande afwijkingen handmatig tegen het origineel."
-            )
+            render_score_circle(t("sentence_label", lang), sentence_percent, t("sentence_typo_detail", lang))
+            st.caption(t("sentence_typo_caption", lang))
             for d in sentence["differences"]:
-                st.write(f"— gevonden: *\"{d['gevonden']}\"* → verwacht: *\"{d['verwacht']}\"*")
+                st.write(t("sentence_diff_line", lang, found=d["gevonden"], expected=d["verwacht"]))
         else:
-            render_score_circle("6de-Traditie-zin", sentence_percent, "niet gevonden")
+            render_score_circle(t("sentence_label", lang), sentence_percent, t("sentence_notfound_detail", lang))
 
-        st.markdown("#### Aanbevolen controles")
-        render_check_line("", "Georganiseerd door vermeld", results["organized_by"])
+        st.markdown(t("recommended_checks_header", lang))
+        render_check_line("", t("organized_by_label", lang), results["organized_by"])
         loc = results["location"]
-        render_check_line("", "Adres/locatie of Zoomlink vermeld", loc["found"])
+        render_check_line("", t("location_label", lang), loc["found"])
         dt = results["date_time"]
-        render_check_line("", "Datum vermeld", dt["found_date"])
-        render_check_line("", "Tijd vermeld", dt["found_time"])
+        render_check_line("", t("date_label", lang), dt["found_date"])
+        render_check_line("", t("time_label", lang), dt["found_time"])
 
-        st.markdown("#### Contactgegevens (indien aanwezig, moet correct zijn)")
-        for key, label, expected in (
-            ("helpline", "Hulplijn", CORRECT_PHONE_DISPLAY),
-            ("email", "E-mailadres", CORRECT_EMAIL),
-            ("website", "Website", CORRECT_WEBSITE_DOMAIN),
-        ):
-            info = results[key]
-            if not info["present"]:
-                st.write(f"⚪ {label} niet aangetroffen (niet verplicht)")
-            elif info["correct"]:
-                st.write(f"✅ {label} correct: \"{info['found']}\"")
-            else:
-                found_display = info["found"] or "(geen herkenbaar nummer/adres na het label)"
-                st.error(f"❌ {label} onjuist — gevonden: \"{found_display}\", verwacht: \"{expected}\"")
+        st.markdown(t("contact_header", lang))
+        contact_rows = (
+            ("helpline", t("contact_helpline_label", lang), lang_config["correct_phone_display"]),
+            ("email", t("contact_email_label", lang), lang_config["correct_email"]),
+            ("website", t("contact_website_label", lang), lang_config["correct_website_domain"]),
+        )
+        if not any(results[key]["configured"] for key, _, _ in contact_rows):
+            st.info(t("contact_not_configured", lang))
+        else:
+            for key, label, expected in contact_rows:
+                info = results[key]
+                if not info["configured"]:
+                    continue
+                if not info["present"]:
+                    st.write(t("contact_not_present", lang, label=label))
+                elif info["correct"]:
+                    st.write(t("contact_correct", lang, label=label, found=info["found"]))
+                else:
+                    found_display = info["found"] or t("contact_no_value_found", lang)
+                    st.error(t("contact_incorrect", lang, label=label, found=found_display, expected=expected))
 
-        st.markdown("#### Anonimiteit (Traditie 12)")
+        st.markdown(t("anonymity_header", lang))
         names = results["full_names"]
         if names:
-            st.warning(
-                "⚠️ Mogelijk volledige naam/namen gevonden: " + ", ".join(names) + ". "
-                "Volgens Traditie 12 dienen we ons 12-stappen-werk anoniem te doen. "
-                "Gebruik bij voorkeur alleen voornaam + eerste letter achternaam (bv. 'Jan V.')."
-            )
+            st.warning(t("anonymity_found_warning", lang, names=", ".join(names)))
         else:
-            st.success("✅ Geen volledige namen gedetecteerd")
+            st.success(t("anonymity_none_found", lang))
 
-        st.markdown("#### Print-gereedheid")
+        st.markdown(t("printready_header", lang))
         pr = results["print_ready"]
         if not pr.get("checked"):
-            st.info(pr.get("message", "Kon niet worden gecontroleerd."))
+            st.info(pr.get("message", t("printready_not_checked_default", lang)))
         else:
             cmyk_ok = pr["cmyk_found"] and not pr["rgb_found"]
-            render_check_line(
-                "", "CMYK-kleurruimte", cmyk_ok,
-                "geen ingebedde afbeeldingen gevonden" if pr.get("no_embedded_images") else
-                ("gebruikt CMYK" if cmyk_ok else "bevat RGB-content — niet drukklaar"),
+            cmyk_detail = (
+                t("printready_cmyk_no_images", lang) if pr.get("no_embedded_images")
+                else (t("printready_cmyk_ok", lang) if cmyk_ok else t("printready_cmyk_bad", lang))
             )
+            render_check_line("", t("printready_cmyk_label", lang), cmyk_ok, cmyk_detail)
             render_check_line(
-                "", "Snijranden (bleed)", pr["has_bleed"],
-                f"paginaformaat {pr['width_mm']}×{pr['height_mm']} mm",
+                "", t("printready_bleed_label", lang), pr["has_bleed"],
+                t("printready_bleed_detail", lang, width=pr["width_mm"], height=pr["height_mm"]),
             )
             if not cmyk_ok or not pr["has_bleed"]:
-                st.info(f"Nog niet volledig printklaar? Gebruik de [bleed & CMYK-tool]({BLEED_TOOL_URL}).")
+                st.info(t("printready_bleed_hint", lang, url=BLEED_TOOL_URL))
 
         ai_result = results.get("ai_result")
         if ai_result:
             if ai_result.get("error"):
-                st.caption(f"AI-verfijning mislukt: {ai_result['error']}")
+                st.caption(t("ai_failed_caption", lang, error=ai_result["error"]))
             else:
-                st.markdown("#### 🤖 AI-verfijning (aanvullend)")
+                st.markdown(t("ai_header", lang))
                 st.json(ai_result)
 
-        with st.expander("📄 Ruwe OCR-tekst (debug)"):
-            st.text(results.get("ocr_text", "(geen tekst)"))
+        with st.expander(t("debug_ocr_expander", lang)):
+            st.text(results.get("ocr_text") or t("debug_ocr_empty", lang))
 
 
 if __name__ == "__main__":

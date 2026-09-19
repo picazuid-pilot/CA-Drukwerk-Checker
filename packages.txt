@@ -1,2 +1,16 @@
 tesseract-ocr
 tesseract-ocr-nld
+tesseract-ocr-fra
+tesseract-ocr-spa
+tesseract-ocr-dan
+tesseract-ocr-chi-sim
+tesseract-ocr-por
+tesseract-ocr-ita
+tesseract-ocr-cym
+tesseract-ocr-fry
+tesseract-ocr-deu
+tesseract-ocr-tha
+tesseract-ocr-rus
+tesseract-ocr-pol
+tesseract-ocr-gla
+tesseract-ocr-nor

@@ -1,7 +1,39 @@
-# CA Drukwerk Checker v3
+# CA Drukwerk Checker v4 — meertalig
 
-Controleert Nederlandstalig CA PI-drukwerk (flyers, posters, ander drukwerk)
-automatisch op de eisen voor goedkeuring.
+Controleert CA PI-drukwerk (flyers, posters, ander drukwerk) automatisch op
+de eisen voor goedkeuring, in 16 talen: Nederlands, Engels, Frans, Spaans,
+Deens, Chinees, Portugees, Italiaans, Welsh, Fries, Duits, Thai, Russisch,
+Pools, Schots-Gaelisch en Noors.
+
+## Talen: wat is geverifieerd, en wat niet
+
+Dit is bewust in twee lagen opgedeeld:
+
+- **Interfacetekst** (knoppen, labels, uitleg) is voor alle 16 talen volledig
+  vertaald — zie `i18n.py`. Dit is gewone software-tekst, laagdrempelig te
+  verbeteren via de vertalingsverzoek-knop onderaan de app.
+- **De inhoudelijke controle-inhoud** (de verplichte traditie-zin, officiële
+  hulplijn/e-mail/website, het logo) is een heel andere zaak: dit is
+  officiële fellowship-tekst en -materiaal. Daarom staat dit **alleen voor
+  Nederlands en Engels** al ingevuld (Engels letterlijk overgenomen uit de
+  C.A. Brand Guide 2025: *"In the spirit of Tradition Six, C.A. is not
+  allied with any sect, denomination, politics, organisation or
+  institution."*). Voor de overige 14 talen toont de app duidelijk "nog niet
+  geconfigureerd" en slaat de betreffende controle over, in plaats van een
+  geraden vertaling als officieel te presenteren.
+
+**Een taal aanvullen of toevoegen:**
+1. Vul in `i18n.py`, in `LANGUAGE_CONFIG[<taalcode>]`, de velden
+   `required_sentence` (en zet `required_sentence_verified` op `True`),
+   `correct_phone_digits`/`correct_phone_display`/`correct_email`/
+   `correct_website_domain` (indien van toepassing) in met geverifieerde
+   officiële tekst.
+2. Zet de officiële logo-PDF's (een 'inner'- en een 'outer'-variant, zie
+   hieronder) in `logo_reference/<taalcode>/`.
+3. Klaar — geen wijzigingen elders nodig.
+
+Weet je de juiste tekst niet, of wil je een taal laten toevoegen? Onderaan
+de app staat een knop die naar **picazuid@gmail.com** verwijst.
 
 ## Wat wordt gecontroleerd
 
@@ -166,12 +198,16 @@ streamlit run app.py
 ```
 ca_checker/
 ├── app.py                  # De volledige applicatie
+├── i18n.py                 # Taalconfiguratie + interfacevertalingen (16 talen)
 ├── requirements.txt        # Python-dependencies
-├── packages.txt            # Systeempakketten (Tesseract) voor Streamlit Cloud
+├── packages.txt            # Systeempakketten (Tesseract, per taal) voor Streamlit Cloud
 ├── README.md
-├── logo_reference/         # De officiële logo-referentie(s) — vervangbaar
-│   ├── Dutch_-_..._Inner_TM.pdf
-│   └── Dutch_-_..._Outer_TM.pdf
+├── logo_reference/         # Eén submap per taalcode, elk met de officiële
+│   ├── nl/                 # logo-referentie-PDF's voor die taal — vervangbaar
+│   │   ├── Dutch_-_..._Inner_TM.pdf
+│   │   └── Dutch_-_..._Outer_TM.pdf
+│   ├── en/                 # (nog leeg — zie PLAATS_HIER_DE_OFFICIELE_LOGO_PDFS.txt)
+│   └── fr/ es/ da/ zh/ pt/ it/ cy/ fy/ de/ th/ ru/ pl/ gd/ no/   (nog leeg)
 └── docs/
     └── C.A.-Brand-Guidelines-2025.pdf   # Alleen ter documentatie, niet
                                           # door de app ingelezen
@@ -179,12 +215,23 @@ ca_checker/
 
 ## Bekende beperkingen
 
+- **Tesseract-taalpakketten**: `packages.txt` somt een pakket per taal op
+  (bv. `tesseract-ocr-fry` voor Fries, `tesseract-ocr-gla` voor Schots-
+  Gaelisch). Deze pakketnamen zijn niet allemaal met zekerheid geverifieerd
+  in de standaard Debian/Ubuntu-repository die Streamlit Cloud gebruikt —
+  als de deploy faalt op het installeren van systeempakketten, verwijder dan
+  de regel van de taal die het probleem veroorzaakt uit `packages.txt` (de
+  app blijft dan gewoon werken voor de overige talen; alleen de OCR voor die
+  ene taal valt terug op Engels, zie `extract_text()` in `app.py`).
 - CMYK/bleed-controle is alleen zinvol bij een PDF-upload; een los JPG/PNG is
   per definitie RGB en geeft daarom altijd de melding om het PDF-bestand aan
   te leveren of eerst de bleed/CMYK-tool te gebruiken.
 - De naamdetectie is een heuristiek (regex op twee opeenvolgende
   hoofdletterwoorden) en kan enkele valse meldingen geven (bv. bij
-  straatnamen). Dit is bewust een waarschuwing, geen harde afkeuring.
+  straatnamen). Dit is bewust een waarschuwing, geen harde afkeuring. Voor
+  de 14 nog niet geconfigureerde talen is de stopwoordenlijst nog leeg
+  (`name_stopwords` in `i18n.py`), dus die detectie geeft daar mogelijk meer
+  valse meldingen dan voor Nederlands/Engels.
 - OCR-kwaliteit hangt af van scan-/exportresolutie. Voor de beste resultaten:
   upload een PDF of een afbeelding van minimaal 150 DPI.
 - De logo-verificatie is getest op één echt fotomateriaal-voorbeeld
@@ -192,4 +239,5 @@ ca_checker/
   ongebruikelijke achtergronden (extreme patronen, zeer lage resolutie) kan
   de vorm-/aspectratio-diagnostiek minder betrouwbaar worden — de kleur-
   egaliteitscontroles blijven in dat geval de doorslaggevende, betrouwbare
+
   signalen.
