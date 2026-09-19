@@ -32,6 +32,7 @@ LANGUAGES = {
     "nl": "Nederlands",
     "en": "English",
     "fr": "Français",
+    "fr-CA": "Français (Canada)",
     "es": "Español",
     "da": "Dansk",
     "zh": "中文",
@@ -54,7 +55,7 @@ DEFAULT_LANGUAGE = "nl"
 # dat geen zin heeft. Als het taalpakket niet geïnstalleerd is op de server,
 # valt extract_text() automatisch terug op alleen 'eng' (zie app.py).
 TESSERACT_LANG = {
-    "nl": "nld+eng", "en": "eng", "fr": "fra+eng", "es": "spa+eng",
+    "nl": "nld+eng", "en": "eng", "fr": "fra+eng", "fr-CA": "fra+eng", "es": "spa+eng",
     "da": "dan+eng", "zh": "chi_sim+eng", "pt": "por+eng", "it": "ita+eng",
     "cy": "cym+eng", "fy": "fry+eng", "de": "deu+eng", "th": "tha+eng",
     "ru": "rus+eng", "pl": "pol+eng", "gd": "gla+eng", "no": "nor+eng",
@@ -120,10 +121,17 @@ LANGUAGE_CONFIG = {
     },
 }
 
-# De overige 14 talen: structuur klaar, inhoud nog te verifiëren. Elke taal
+# De overige talen: structuur klaar, inhoud nog te verifiëren. Elke taal
 # krijgt dezelfde lege sjabloon — vul aan zodra een geverifieerde bron
 # beschikbaar is.
-_UNVERIFIED_LANGS = ["fr", "es", "da", "zh", "pt", "it", "cy", "fy", "de", "th", "ru", "pl", "gd", "no"]
+#
+# Let op voor fr-CA (Canadees Frans) specifiek: volgens de C.A. Brand Guide
+# gebruiken de VS én Canada het geregistreerde ®-teken (niet ™, dat is voor
+# vertaalde versies elders) — zoek dus naar een 'R'-variant van het logo,
+# niet per se een 'TM'-variant, zie logo_reference/fr-CA/.
+_UNVERIFIED_LANGS = [
+    "fr", "fr-CA", "es", "da", "zh", "pt", "it", "cy", "fy", "de", "th", "ru", "pl", "gd", "no",
+]
 for _code in _UNVERIFIED_LANGS:
     LANGUAGE_CONFIG[_code] = {
         "logo_folder": _code,
@@ -429,6 +437,32 @@ UI_STRINGS["fr"] = {
     "debug_ocr_expander": "📄 Texte OCR brut (débogage)",
     "debug_ocr_empty": "(aucun texte)",
 }
+
+# Français canadien (Québec) : afgeleid van internationaal Frans, met
+# gerichte terminologische aanpassingen. Voeg hier gewoon een regel toe
+# als er meer Quebecoise voorkeurstermen nodig blijken (bv. via de
+# vertalingsverzoek-knop in de app).
+_FR_CA_REPLACEMENTS = {
+    "adresse e-mail": "adresse courriel",
+    "Adresse e-mail": "Adresse courriel",
+    "e-mail": "courriel",
+    "E-mail": "Courriel",
+}
+
+
+def _apply_replacements(text: str, replacements: dict) -> str:
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
+
+
+UI_STRINGS["fr-CA"] = {
+    key: _apply_replacements(value, _FR_CA_REPLACEMENTS)
+    for key, value in UI_STRINGS["fr"].items()
+}
+# App-titel en -omschrijving mogen best iets Canadees klinken i.p.v. een
+# kale kopie van de Franse tekst.
+UI_STRINGS["fr-CA"]["app_title"] = "🖼️ Vérificateur d'imprimés C.A. (Canada)"
 
 UI_STRINGS["es"] = {
     "app_title": "🖼️ Verificador de material impreso de C.A.",

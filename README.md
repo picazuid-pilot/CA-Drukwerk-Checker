@@ -1,15 +1,21 @@
 # CA Drukwerk Checker v4 — meertalig
 
 Controleert CA PI-drukwerk (flyers, posters, ander drukwerk) automatisch op
-de eisen voor goedkeuring, in 16 talen: Nederlands, Engels, Frans, Spaans,
-Deens, Chinees, Portugees, Italiaans, Welsh, Fries, Duits, Thai, Russisch,
-Pools, Schots-Gaelisch en Noors.
+de eisen voor goedkeuring, in 17 talen: Nederlands, Engels, Frans, Frans
+(Canada/Québec), Spaans, Deens, Chinees, Portugees, Italiaans, Welsh, Fries,
+Duits, Thai, Russisch, Pools, Schots-Gaelisch en Noors.
+
+Frans (Canada) staat los van internationaal Frans: andere voorkeurstermen
+(bv. "courriel" i.p.v. "e-mail") én, belangrijker, een ander handelsmerkteken
+— de C.A. Brand Guide schrijft voor dat de VS en Canada het geregistreerde
+®-teken gebruiken, terwijl vertaalde versies elders ™ gebruiken. Zoek voor
+`logo_reference/fr-CA/` dus naar een ®-logovariant, niet naar een TM-variant.
 
 ## Talen: wat is geverifieerd, en wat niet
 
 Dit is bewust in twee lagen opgedeeld:
 
-- **Interfacetekst** (knoppen, labels, uitleg) is voor alle 16 talen volledig
+- **Interfacetekst** (knoppen, labels, uitleg) is voor alle 17 talen volledig
   vertaald — zie `i18n.py`. Dit is gewone software-tekst, laagdrempelig te
   verbeteren via de vertalingsverzoek-knop onderaan de app.
 - **De inhoudelijke controle-inhoud** (de verplichte traditie-zin, officiële
@@ -18,7 +24,7 @@ Dit is bewust in twee lagen opgedeeld:
   Nederlands en Engels** al ingevuld (Engels letterlijk overgenomen uit de
   C.A. Brand Guide 2025: *"In the spirit of Tradition Six, C.A. is not
   allied with any sect, denomination, politics, organisation or
-  institution."*). Voor de overige 14 talen toont de app duidelijk "nog niet
+  institution."*). Voor de overige 15 talen toont de app duidelijk "nog niet
   geconfigureerd" en slaat de betreffende controle over, in plaats van een
   geraden vertaling als officieel te presenteren.
 
@@ -198,7 +204,7 @@ streamlit run app.py
 ```
 ca_checker/
 ├── app.py                  # De volledige applicatie
-├── i18n.py                 # Taalconfiguratie + interfacevertalingen (16 talen)
+├── i18n.py                 # Taalconfiguratie + interfacevertalingen (17 talen)
 ├── requirements.txt        # Python-dependencies
 ├── packages.txt            # Systeempakketten (Tesseract, per taal) voor Streamlit Cloud
 ├── README.md
