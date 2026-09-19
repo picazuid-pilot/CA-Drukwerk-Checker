@@ -945,6 +945,43 @@ def get_logo_references():
     return load_logo_references(LOGO_REFERENCE_FOLDER)
 
 
+def compute_overall_percent(results) -> int:
+    """
+    Berekent een samengesteld percentage uit de drie verplichte controles,
+    voor de statusbalk bovenaan (rood/geel/groen i.p.v. alleen ja/nee).
+    Elke component levert een score 0-100:
+      - logo: 100 bij volledige compliance; bij gevonden-maar-afwijkend
+        gedeeltelijk krediet naar rato van hoeveel deelcontroles slagen
+        (achtergrond/inkt/aspectratio); anders de (lage) vormscore zelf
+      - zin: de al bestaande woord-overeenkomst-score
+      - contactgegevens: 100 als geen enkele vermeld is of alle vermelde
+        kloppen; anders naar rato van hoeveel vermelde gegevens kloppen
+    Het eindpercentage is het MINIMUM van deze drie (niet het gemiddelde):
+    een verplichte controle die duidelijk niet in orde is, mag niet worden
+    weggemiddeld door de andere twee die wel in orde zijn — je bent zo sterk
+    als je zwakste verplichte controle. Gebruikt om de banner in te delen:
+    <=60% rood, 60-90% geel, >=90% groen.
+    """
+    logo = results["logo"]
+    if logo.get("compliant"):
+        logo_score = 100.0
+    elif logo.get("found"):
+        sub_checks = [logo.get("gap_uniform"), logo.get("ink_uniform"), logo.get("aspect_ok")]
+        known = [c for c in sub_checks if c is not None]
+        logo_score = (sum(1 for c in known if c) / len(known) * 100) if known else 50.0
+    else:
+        logo_score = float(_logo_score_to_percent(logo.get("shape_score", 0.0)))
+
+    sentence_score = results["sentence"]["score"] * 100
+
+    contact_keys = ("helpline", "email", "website")
+    present = [results[k] for k in contact_keys if results[k]["present"]]
+    contact_score = 100.0 if not present else (sum(1 for c in present if c["correct"]) / len(present) * 100)
+
+    overall = min(logo_score, sentence_score, contact_score)
+    return round(overall)
+
+
 def analyze_file(uploaded_file, ai_config=None):
     results = {"errors": []}
 
@@ -1017,6 +1054,7 @@ def analyze_file(uploaded_file, ai_config=None):
         and results["sentence"]["status"] == "ok"
         and not contact_details_wrong
     )
+    results["overall_percent"] = compute_overall_percent(results)
 
     return results
 
@@ -1182,10 +1220,13 @@ def main():
                 st.error(e)
             return
 
-        if results["approved"]:
-            st.success("✅ Voldoet aan de verplichte eisen voor goedkeuring")
+        overall_percent = results.get("overall_percent", 100 if results["approved"] else 0)
+        if overall_percent <= 60:
+            st.error(f"❌ Voldoet NIET aan de eisen ({overall_percent}%)")
+        elif overall_percent < 90:
+            st.warning(f"⚠️ Voldoet gedeeltelijk aan de eisen ({overall_percent}%) — controleer de afwijkingen hieronder")
         else:
-            st.error("❌ Voldoet NIET aan alle verplichte eisen")
+            st.success(f"✅ Voldoet aan de eisen ({overall_percent}%)")
 
         st.markdown("#### Verplichte controles")
 
