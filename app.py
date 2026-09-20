@@ -1000,11 +1000,20 @@ def compute_overall_percent(results) -> int:
     return round(overall)
 
 
-def analyze_file(uploaded_file, lang: str, ai_config=None):
+def analyze_file(uploaded_file, lang: str, ai_config=None, preloaded=None):
+    """
+    preloaded: optioneel (page_img, is_pdf, pdf_bytes)-tuple, zoals
+    load_uploaded_file() teruggeeft. Als main() de pagina al heeft ingeladen
+    voor de voorbeeldweergave, wordt die hier hergebruikt i.p.v. een PDF
+    twee keer te rasterizen (kost anders onnodig dubbele tijd).
+    """
     results = {"errors": []}
     lang_config = get_language_config(lang)
 
-    page_img, is_pdf, pdf_bytes = load_uploaded_file(uploaded_file)
+    if preloaded is not None:
+        page_img, is_pdf, pdf_bytes = preloaded
+    else:
+        page_img, is_pdf, pdf_bytes = load_uploaded_file(uploaded_file)
 
     if page_img is None:
         results["errors"].append(
@@ -1222,16 +1231,29 @@ def main():
 
     col1, col2 = st.columns([1, 1])
 
+    is_pdf_upload = uploaded_file.name.lower().endswith(".pdf")
+    preloaded = None
+
     with col1:
         st.subheader(t("uploaded_file_header", lang))
-        if uploaded_file.name.lower().endswith(".pdf"):
-            st.info(t("uploaded_file_pdf_label", lang, name=uploaded_file.name))
+        if is_pdf_upload:
+            # Rasterizeer de PDF één keer hier voor de voorbeeldweergave, en
+            # geef dat resultaat straks door aan analyze_file() zodat de PDF
+            # niet nogmaals gerasterized hoeft te worden voor de analyse.
+            preloaded = load_uploaded_file(uploaded_file)
+            preview_img, _, _ = preloaded
+            uploaded_file.seek(0)
+            if preview_img is not None:
+                st.caption(t("uploaded_file_pdf_label", lang, name=uploaded_file.name))
+                st.image(preview_img, use_container_width=True)
+            else:
+                st.info(t("uploaded_file_pdf_label", lang, name=uploaded_file.name))
         else:
             st.image(Image.open(uploaded_file), use_container_width=True)
         uploaded_file.seek(0)
 
     with st.spinner(t("analyzing_spinner", lang)):
-        results = analyze_file(uploaded_file, lang, ai_config)
+        results = analyze_file(uploaded_file, lang, ai_config, preloaded=preloaded)
 
     with col2:
         st.subheader(t("result_header", lang))
