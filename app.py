@@ -941,8 +941,17 @@ def call_ai_verification(api_key, base_url, model, ocr_text):
 # Volledige analyse
 # =============================================================================
 
-@st.cache_resource(show_spinner=False)
 def get_logo_references(lang: str):
+    """
+    Geen @st.cache_resource hier: het dure werk (PDF rasterizeren, maskers
+    bouwen) is al gecachet per bestand op basis van bestandsinhoud, zie
+    _load_logo_reference_cached(). Als deze buitenste functie ZELF ook op
+    'lang' gecachet zou worden, blijft een eerder "geen PDF's gevonden"-
+    resultaat voor altijd hangen zodra er later wél PDF's aan die taalmap
+    worden toegevoegd — exact de klasse bug die de per-bestand-caching net
+    moest voorkomen, nu op mapniveau. Path.glob() over een map is te
+    goedkoop om code-matig de moeite van cachen waard te zijn.
+    """
     folder_name = get_language_config(lang).get("logo_folder", lang)
     return load_logo_references(LOGO_REFERENCE_ROOT / folder_name)
 

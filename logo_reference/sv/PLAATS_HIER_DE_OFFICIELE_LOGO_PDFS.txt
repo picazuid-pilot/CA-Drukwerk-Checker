@@ -1,0 +1,14 @@
+Plaats hier de 2 officiële logo-PDF's voor Zweeds:
+  - een 'inner'-variant (het teken staat binnen de buitenste ring)
+  - een 'outer'-variant (het teken staat buiten de buitenste ring)
+
+Naamconventie: vrij, zolang de bestandsnaam de woorden 'inner'/'outer' en
+'tm'/'r' bevat, bijvoorbeeld:
+  Swedish_-_Outer_TM.pdf
+  Swedish_-_Inner_TM.pdf
+
+Download de officiële logo's via: https://cawscit.github.io/logofinder/
+Vragen of zelf geen toegang? Mail naar picazuid@gmail.com
+
+Zolang hier geen PDF's staan, toont de app voor deze taal duidelijk
+"geen referentie-PDF's gevonden" in plaats van een foute of geraden match.

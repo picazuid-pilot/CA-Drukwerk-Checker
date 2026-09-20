@@ -14,3 +14,4 @@ tesseract-ocr-rus
 tesseract-ocr-pol
 tesseract-ocr-gla
 tesseract-ocr-nor
+tesseract-ocr-swe

@@ -46,6 +46,7 @@ LANGUAGES = {
     "pl": "Polski",
     "gd": "Gàidhlig (Scottish Gaelic)",
     "no": "Norsk",
+    "sv": "Svenska",
 }
 
 DEFAULT_LANGUAGE = "nl"
@@ -58,7 +59,7 @@ TESSERACT_LANG = {
     "nl": "nld+eng", "en": "eng", "fr": "fra+eng", "fr-CA": "fra+eng", "es": "spa+eng",
     "da": "dan+eng", "zh": "chi_sim+eng", "pt": "por+eng", "it": "ita+eng",
     "cy": "cym+eng", "fy": "fry+eng", "de": "deu+eng", "th": "tha+eng",
-    "ru": "rus+eng", "pl": "pol+eng", "gd": "gla+eng", "no": "nor+eng",
+    "ru": "rus+eng", "pl": "pol+eng", "gd": "gla+eng", "no": "nor+eng", "sv": "swe+eng",
 }
 
 # =============================================================================
@@ -130,7 +131,7 @@ LANGUAGE_CONFIG = {
 # vertaalde versies elders) — zoek dus naar een 'R'-variant van het logo,
 # niet per se een 'TM'-variant, zie logo_reference/fr-CA/.
 _UNVERIFIED_LANGS = [
-    "fr", "fr-CA", "es", "da", "zh", "pt", "it", "cy", "fy", "de", "th", "ru", "pl", "gd", "no",
+    "fr", "fr-CA", "es", "da", "zh", "pt", "it", "cy", "fy", "de", "th", "ru", "pl", "gd", "no", "sv",
 ]
 for _code in _UNVERIFIED_LANGS:
     LANGUAGE_CONFIG[_code] = {
@@ -1684,6 +1685,100 @@ UI_STRINGS["gd"] = {
     "ai_header": "#### 🤖 Leasachadh AI (a bharrachd)",
     "debug_ocr_expander": "📄 Teacsa OCR amh (dì-bhugachadh)",
     "debug_ocr_empty": "(gun teacsa)",
+}
+
+UI_STRINGS["sv"] = {
+    "app_title": "🖼️ CA Trycksakskontroll",
+    "app_caption": "Kontrollerar C.A.-flyers, affischer och annat tryckt material mot PI-kommitténs godkännandekrav.",
+    "language_label": "🌐 Språk / Language",
+    "tesseract_warning": "⚠️ Tesseract OCR är inte tillgängligt på den här servern. Textkontroller kan inte köras förrän det är installerat. Se README för installationsinstruktioner.",
+    "pymupdf_info": "ℹ️ PyMuPDF saknas — PDF-stöd och kontroll av trycksäkerhet är inaktiverade.",
+    "sidebar_settings_header": "⚙️ Inställningar",
+    "sidebar_logo_ref_label": "**Officiell logotypreferens:**",
+    "sidebar_logo_loaded": "{count} referensfil(er) inlästa",
+    "sidebar_logo_show_refs": "Visa inlästa referenser",
+    "sidebar_logo_replace_hint": "Annat språk/region? Ersätt PDF-filerna i `logo_reference/<språkkod>/` med det landets officiella logotyp-PDF (samma namnkonvention med 'inner'/'outer' och 'TM'/'R') — ingen kodändring behövs.",
+    "sidebar_logo_none_found": "Inga referens-PDF:er hittades ännu för det här språket. Se nedan för att begära en, eller ladda ner de officiella logotyperna på cawscit.github.io/logofinder.",
+    "sidebar_ai_header": "**Valfri AI-förfining**",
+    "sidebar_ai_caption": "Inte obligatoriskt. Med en gratis eller egen OpenAI-kompatibel API-nyckel (t.ex. Groq) förfinas textkontrollerna ytterligare. Utan nyckel körs allt enbart på OCR + regler.",
+    "sidebar_ai_requests_warning": "⚠️ Python-paketet 'requests' är inte tillgängligt på den här servern — AI-förfining kan därför inte fungera, även med en giltig nyckel.",
+    "sidebar_ai_checkbox": "Använd AI-förfining",
+    "sidebar_ai_apikey_label": "API-nyckel",
+    "sidebar_ai_baseurl_label": "API-bas-URL",
+    "sidebar_ai_model_label": "Modell",
+    "sidebar_requirements_header": "### 📝 Krav för godkännande",
+    "sidebar_requirements_body": (
+        "**Obligatoriskt:**\n"
+        "- ✅ Officiell logotyp, använd OFÖRÄNDRAD: ingen förvrängning/andra proportioner, inga effekter, "
+        "och både bläcket och bakgrunden inom den yttre cirkeln i 1 enhetlig färg\n"
+        "- ✅ Den obligatoriska traditionsmeningen (korrekt)\n"
+        "- ✅ Korrekt jourlinje/e-post/webbplats, *om angivet*\n\n"
+        "**Rekommenderas (i förekommande fall):**\n"
+        "- Arrangerad av\n- Adress/plats eller Zoom-länk\n- Datum och tid\n\n"
+        "**Observera (Tradition 12):**\n- Inga fullständiga namn — använd endast förnamn + efternamnets initial"
+    ),
+    "sidebar_bleed_tool_hint": "**Inte tryckklar än?** Använd [utfalls- och CMYK-verktyget]({url}).",
+    "sidebar_translation_request_header": "### 🌍 Saknas ditt språk, eller är något fel?",
+    "sidebar_translation_request_body": "Begär ett språk, rapportera ett fel, eller skicka den officiella översatta texten/logotypen till:",
+    "uploader_label": "Ladda upp en flyer, affisch eller annat tryckt material",
+    "uploader_help": "PDF rekommenderas för en tillförlitlig CMYK-/utfallskontroll.",
+    "uploaded_file_header": "📤 Uppladdad fil",
+    "uploaded_file_pdf_label": "PDF: {name}",
+    "analyzing_spinner": "🔍 Analyserar...",
+    "result_header": "📊 Resultat",
+    "status_fail": "❌ Uppfyller INTE kraven ({percent}%)",
+    "status_partial": "⚠️ Uppfyller delvis kraven ({percent}%) — kontrollera avvikelserna nedan",
+    "status_pass": "✅ Uppfyller kraven ({percent}%)",
+    "mandatory_checks_header": "#### Obligatoriska kontroller",
+    "logo_shape_label": "Logotyp — formlikhet",
+    "logo_shape_compared_to": "jämfört med: {name}",
+    "logo_shape_no_candidate": "ingen kandidat hittades",
+    "logo_not_found_caption": "⚠️ Under detekteringströskeln — ingen tillförlitlig matchning. Detta kan vara korrekt (ingen logotyp finns), men kontrollera visuellt vid tvivel, särskilt vid en rörig bakgrund eller låg upplösning.",
+    "logo_gap_label": "Bakgrunden inuti logotypen är 1 enhetlig färg (inget foto/mönster synligt)",
+    "logo_gap_detail": "{pct}% av bakgrunden inom den yttre cirkeln är 1 enhetlig färg{color}",
+    "logo_ink_label": "Logotypens bläck är 1 enhetlig färg (inga effekter)",
+    "logo_ink_detail": "{pct}% av bläcket (ring/bokstäver/text) är 1 enhetlig färg{color}",
+    "logo_aspect_label": "Ingen förvrängning — korrekta proportioner (cirkelformad)",
+    "logo_aspect_detail_known": "axelförhållande {ratio}",
+    "logo_aspect_detail_unknown": "kunde inte fastställas",
+    "logo_noncompliant_warning": "⚠️ Logotypen hittades, men avviker från den officiella designen (se kontrollerna ovan). Enligt varumärkesriktlinjerna får logotypen inte vara förvrängd, ha effekter, eller placeras på en ojämn bakgrund.",
+    "sentence_label": "Obligatorisk traditionsmening",
+    "sentence_ok_detail": "korrekt närvarande",
+    "sentence_typo_detail": "avviker på punkterna nedan",
+    "sentence_notfound_detail": "hittades inte",
+    "sentence_typo_caption": "Observera: detta kan vara riktiga stavfel i trycksaken, men OCR läser ibland fel även på korrekt stavad text. Kontrollera avvikelserna nedan manuellt mot originalet.",
+    "sentence_diff_line": "— hittades: *\"{found}\"* → förväntades: *\"{expected}\"*",
+    "sentence_not_configured": "ℹ️ Den obligatoriska meningen är ännu inte konfigurerad för det här språket (ingen verifierad officiell text än) — den här kontrollen hoppas över. Begär rätt text via kontakten nedan.",
+    "recommended_checks_header": "#### Rekommenderade kontroller",
+    "organized_by_label": "'Arrangerad av' angivet",
+    "location_label": "Adress/plats eller Zoom-länk angiven",
+    "date_label": "Datum angivet",
+    "time_label": "Tid angiven",
+    "contact_header": "#### Kontaktuppgifter (om de finns, måste vara korrekta)",
+    "contact_not_configured": "ℹ️ Officiella kontaktuppgifter för det här språket/regionen är ännu inte konfigurerade — den här kontrollen hoppas över.",
+    "contact_helpline_label": "Jourlinje",
+    "contact_email_label": "E-postadress",
+    "contact_website_label": "Webbplats",
+    "contact_not_present": "⚪ {label} hittades inte (inte obligatoriskt)",
+    "contact_correct": "✅ {label} korrekt: \"{found}\"",
+    "contact_incorrect": "❌ {label} felaktig — hittades: \"{found}\", förväntades: \"{expected}\"",
+    "contact_no_value_found": "(inget igenkännbart nummer/adress efter etiketten)",
+    "anonymity_header": "#### Anonymitet (Tradition 12)",
+    "anonymity_found_warning": "⚠️ Möjligt/möjliga fullständiga namn hittades: {names}. Enligt Tradition 12 bevarar vi anonymitet i vårt tolvstegsarbete. Föredra endast förnamn + efternamnets initial (t.ex. 'Jan V.').",
+    "anonymity_none_found": "✅ Inga fullständiga namn upptäcktes",
+    "printready_header": "#### Trycksäkerhet",
+    "printready_not_checked_default": "Kunde inte kontrolleras.",
+    "printready_cmyk_label": "CMYK-färgrymd",
+    "printready_cmyk_no_images": "inga inbäddade bilder hittades",
+    "printready_cmyk_ok": "använder CMYK",
+    "printready_cmyk_bad": "innehåller RGB-innehåll — inte tryckklar",
+    "printready_bleed_label": "Utfall",
+    "printready_bleed_detail": "sidformat {width}×{height} mm",
+    "printready_bleed_hint": "Inte helt tryckklar än? Använd [utfalls- och CMYK-verktyget]({url}).",
+    "ai_failed_caption": "AI-förfining misslyckades: {error}",
+    "ai_header": "#### 🤖 AI-förfining (kompletterande)",
+    "debug_ocr_expander": "📄 Rå OCR-text (felsökning)",
+    "debug_ocr_empty": "(ingen text)",
 }
 
 
