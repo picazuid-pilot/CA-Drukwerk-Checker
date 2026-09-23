@@ -170,7 +170,7 @@ UI_STRINGS["nl"] = {
     "sidebar_logo_replace_hint": "Andere taal/regio? Vervang de PDF's in de map `logo_reference/<taalcode>/` door de officiële logo-PDF van dat land (zelfde naamconventie met 'inner'/'outer' en 'TM'/'R') — geen codewijziging nodig.",
     "sidebar_logo_none_found": "Geen referentie-PDF's gevonden voor deze taal. Zie hieronder om er een aan te vragen, of download de officiële logo's via cawscit.github.io/logofinder.",
     "sidebar_ai_header": "**Optionele AI-verfijning**",
-    "sidebar_ai_caption": "Niet verplicht. Met een gratis of eigen OpenAI-compatibele API-sleutel (bv. Groq) worden de tekstcontroles extra verfijnd. Zonder sleutel werkt alles puur op OCR + regels.",
+    "sidebar_ai_caption": "Niet verplicht. Met een gratis of eigen OpenAI-compatibele API-sleutel (bv. Groq) worden de tekstcontroles extra verfijnd. Zonder sleutel werkt alles puur op OCR + regels. Dus maak in 1 minuut een gratis Groq Api aan en verbeter de output resultaten",
     "sidebar_ai_requests_warning": "⚠️ Het Python-package 'requests' is niet beschikbaar op deze server — AI-verfijning kan daardoor niet werken, ook niet met een geldige sleutel.",
     "sidebar_ai_checkbox": "AI-verfijning gebruiken",
     "sidebar_ai_apikey_label": "API-sleutel",
