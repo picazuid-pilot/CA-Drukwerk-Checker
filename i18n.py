@@ -190,7 +190,7 @@ UI_STRINGS["nl"] = {
     "sidebar_bleed_tool_hint": "**Nog niet printklaar?** Gebruik de [bleed & CMYK-tool]({url}).",
     "sidebar_translation_request_header": "### 🌍 Ontbreekt jouw taal, of klopt iets niet?",
     "sidebar_translation_request_body": "Vraag een taal aan, meld een fout, of lever de officiële vertaalde tekst/logo aan via:",
-    "uploader_label": "Upload een flyer, poster of ander drukwerk",
+    "uploader_label": "Upload een flyer, poster of ander drukwerk als pdf, png of jpg in een zo hoog moegleijke resolutie (dus geen screenshots, aangeraden is pdf en png)",
     "uploader_help": "PDF wordt aangeraden voor een betrouwbare CMYK/snijrand-check.",
     "uploaded_file_header": "📤 Geüpload bestand",
     "uploaded_file_pdf_label": "PDF: {name}",
