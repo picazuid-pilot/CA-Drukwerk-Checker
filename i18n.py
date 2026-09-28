@@ -170,12 +170,15 @@ UI_STRINGS["nl"] = {
     "sidebar_logo_replace_hint": "Andere taal/regio? Vervang de PDF's in de map `logo_reference/<taalcode>/` door de officiële logo-PDF van dat land (zelfde naamconventie met 'inner'/'outer' en 'TM'/'R') — geen codewijziging nodig.",
     "sidebar_logo_none_found": "Geen referentie-PDF's gevonden voor deze taal. Zie hieronder om er een aan te vragen, of download de officiële logo's via cawscit.github.io/logofinder.",
     "sidebar_ai_header": "**Optionele AI-verfijning**",
-    "sidebar_ai_caption": "Niet verplicht. Met een gratis of eigen OpenAI-compatibele API-sleutel (bv. Groq) worden de tekstcontroles extra verfijnd. Zonder sleutel werkt alles puur op OCR + regels. Dus maak in 1 minuut een gratis Groq Api aan en verbeter de output resultaten",
+    "sidebar_ai_caption": "Niet verplicht. Met een gratis of eigen OpenAI-compatibele API-sleutel (bv. Groq) worden de tekstcontroles extra verfijnd. Zonder sleutel werkt alles puur op OCR + regels.",
     "sidebar_ai_requests_warning": "⚠️ Het Python-package 'requests' is niet beschikbaar op deze server — AI-verfijning kan daardoor niet werken, ook niet met een geldige sleutel.",
     "sidebar_ai_checkbox": "AI-verfijning gebruiken",
     "sidebar_ai_apikey_label": "API-sleutel",
     "sidebar_ai_baseurl_label": "API base URL",
     "sidebar_ai_model_label": "Model",
+    "sidebar_ai_remember_checkbox": "Onthoud sleutel op deze computer",
+    "sidebar_ai_remember_warning": "Wordt alleen in de browser van deze computer bewaard, niet op de server. Gebruik dit niet op een gedeelde of openbare computer.",
+    "sidebar_ai_forget_button": "Vergeet opgeslagen sleutel",
     "sidebar_requirements_header": "### 📝 Eisen voor goedkeuring",
     "sidebar_requirements_body": (
         "**Verplicht:**\n"
@@ -190,7 +193,7 @@ UI_STRINGS["nl"] = {
     "sidebar_bleed_tool_hint": "**Nog niet printklaar?** Gebruik de [bleed & CMYK-tool]({url}).",
     "sidebar_translation_request_header": "### 🌍 Ontbreekt jouw taal, of klopt iets niet?",
     "sidebar_translation_request_body": "Vraag een taal aan, meld een fout, of lever de officiële vertaalde tekst/logo aan via:",
-    "uploader_label": "Upload een flyer, poster of ander drukwerk als pdf, png of jpg in een zo hoog moegleijke resolutie (dus geen screenshots, aangeraden is pdf en png)",
+    "uploader_label": "Upload een flyer, poster of ander drukwerk",
     "uploader_help": "PDF wordt aangeraden voor een betrouwbare CMYK/snijrand-check.",
     "uploaded_file_header": "📤 Geüpload bestand",
     "uploaded_file_pdf_label": "PDF: {name}",
@@ -270,6 +273,9 @@ UI_STRINGS["en"] = {
     "sidebar_ai_apikey_label": "API key",
     "sidebar_ai_baseurl_label": "API base URL",
     "sidebar_ai_model_label": "Model",
+    "sidebar_ai_remember_checkbox": "Remember key on this computer",
+    "sidebar_ai_remember_warning": "Stored only in this computer's browser, not on the server. Don't use this on a shared or public computer.",
+    "sidebar_ai_forget_button": "Forget saved key",
     "sidebar_requirements_header": "### 📝 Approval requirements",
     "sidebar_requirements_body": (
         "**Required:**\n"
@@ -364,6 +370,9 @@ UI_STRINGS["fr"] = {
     "sidebar_ai_apikey_label": "Clé API",
     "sidebar_ai_baseurl_label": "URL de base de l'API",
     "sidebar_ai_model_label": "Modèle",
+    "sidebar_ai_remember_checkbox": "Mémoriser la clé sur cet ordinateur",
+    "sidebar_ai_remember_warning": "Enregistrée uniquement dans le navigateur de cet ordinateur, pas sur le serveur. Ne l'utilisez pas sur un ordinateur partagé ou public.",
+    "sidebar_ai_forget_button": "Oublier la clé enregistrée",
     "sidebar_requirements_header": "### 📝 Exigences d'approbation",
     "sidebar_requirements_body": (
         "**Obligatoire :**\n"
@@ -484,6 +493,9 @@ UI_STRINGS["es"] = {
     "sidebar_ai_apikey_label": "Clave API",
     "sidebar_ai_baseurl_label": "URL base de la API",
     "sidebar_ai_model_label": "Modelo",
+    "sidebar_ai_remember_checkbox": "Recordar la clave en este ordenador",
+    "sidebar_ai_remember_warning": "Se guarda solo en el navegador de este ordenador, no en el servidor. No lo uses en un ordenador compartido o público.",
+    "sidebar_ai_forget_button": "Olvidar la clave guardada",
     "sidebar_requirements_header": "### 📝 Requisitos de aprobación",
     "sidebar_requirements_body": (
         "**Obligatorio:**\n"
@@ -578,6 +590,9 @@ UI_STRINGS["de"] = {
     "sidebar_ai_apikey_label": "API-Schlüssel",
     "sidebar_ai_baseurl_label": "API-Basis-URL",
     "sidebar_ai_model_label": "Modell",
+    "sidebar_ai_remember_checkbox": "Schlüssel auf diesem Computer merken",
+    "sidebar_ai_remember_warning": "Wird nur im Browser dieses Computers gespeichert, nicht auf dem Server. Nicht auf einem gemeinsam genutzten oder öffentlichen Computer verwenden.",
+    "sidebar_ai_forget_button": "Gespeicherten Schlüssel vergessen",
     "sidebar_requirements_header": "### 📝 Genehmigungsanforderungen",
     "sidebar_requirements_body": (
         "**Erforderlich:**\n"
@@ -672,6 +687,9 @@ UI_STRINGS["it"] = {
     "sidebar_ai_apikey_label": "Chiave API",
     "sidebar_ai_baseurl_label": "URL base API",
     "sidebar_ai_model_label": "Modello",
+    "sidebar_ai_remember_checkbox": "Ricorda la chiave su questo computer",
+    "sidebar_ai_remember_warning": "Salvata solo nel browser di questo computer, non sul server. Non usarla su un computer condiviso o pubblico.",
+    "sidebar_ai_forget_button": "Dimentica la chiave salvata",
     "sidebar_requirements_header": "### 📝 Requisiti di approvazione",
     "sidebar_requirements_body": (
         "**Obbligatorio:**\n"
@@ -766,6 +784,9 @@ UI_STRINGS["pt"] = {
     "sidebar_ai_apikey_label": "Chave de API",
     "sidebar_ai_baseurl_label": "URL base da API",
     "sidebar_ai_model_label": "Modelo",
+    "sidebar_ai_remember_checkbox": "Lembrar a chave neste computador",
+    "sidebar_ai_remember_warning": "Guardada apenas no navegador deste computador, não no servidor. Não use em um computador compartilhado ou público.",
+    "sidebar_ai_forget_button": "Esquecer a chave salva",
     "sidebar_requirements_header": "### 📝 Requisitos de aprovação",
     "sidebar_requirements_body": (
         "**Obrigatório:**\n"
@@ -860,6 +881,9 @@ UI_STRINGS["da"] = {
     "sidebar_ai_apikey_label": "API-nøgle",
     "sidebar_ai_baseurl_label": "API-basis-URL",
     "sidebar_ai_model_label": "Model",
+    "sidebar_ai_remember_checkbox": "Husk nøglen på denne computer",
+    "sidebar_ai_remember_warning": "Gemmes kun i denne computers browser, ikke på serveren. Brug det ikke på en delt eller offentlig computer.",
+    "sidebar_ai_forget_button": "Glem gemt nøgle",
     "sidebar_requirements_header": "### 📝 Godkendelseskrav",
     "sidebar_requirements_body": (
         "**Påkrævet:**\n"
@@ -954,6 +978,9 @@ UI_STRINGS["no"] = {
     "sidebar_ai_apikey_label": "API-nøkkel",
     "sidebar_ai_baseurl_label": "API-basis-URL",
     "sidebar_ai_model_label": "Modell",
+    "sidebar_ai_remember_checkbox": "Husk nøkkelen på denne datamaskinen",
+    "sidebar_ai_remember_warning": "Lagres bare i nettleseren på denne datamaskinen, ikke på serveren. Ikke bruk dette på en delt eller offentlig datamaskin.",
+    "sidebar_ai_forget_button": "Glem lagret nøkkel",
     "sidebar_requirements_header": "### 📝 Godkjenningskrav",
     "sidebar_requirements_body": (
         "**Påkrevd:**\n"
@@ -1048,6 +1075,9 @@ UI_STRINGS["pl"] = {
     "sidebar_ai_apikey_label": "Klucz API",
     "sidebar_ai_baseurl_label": "Bazowy URL API",
     "sidebar_ai_model_label": "Model",
+    "sidebar_ai_remember_checkbox": "Zapamiętaj klucz na tym komputerze",
+    "sidebar_ai_remember_warning": "Przechowywany tylko w przeglądarce tego komputera, nie na serwerze. Nie używaj tego na komputerze współdzielonym ani publicznym.",
+    "sidebar_ai_forget_button": "Zapomnij zapisany klucz",
     "sidebar_requirements_header": "### 📝 Wymagania zatwierdzenia",
     "sidebar_requirements_body": (
         "**Wymagane:**\n"
@@ -1142,6 +1172,9 @@ UI_STRINGS["ru"] = {
     "sidebar_ai_apikey_label": "Ключ API",
     "sidebar_ai_baseurl_label": "Базовый URL API",
     "sidebar_ai_model_label": "Модель",
+    "sidebar_ai_remember_checkbox": "Запомнить ключ на этом компьютере",
+    "sidebar_ai_remember_warning": "Хранится только в браузере этого компьютера, а не на сервере. Не используйте на общем или публичном компьютере.",
+    "sidebar_ai_forget_button": "Забыть сохранённый ключ",
     "sidebar_requirements_header": "### 📝 Требования для утверждения",
     "sidebar_requirements_body": (
         "**Обязательно:**\n"
@@ -1236,6 +1269,9 @@ UI_STRINGS["zh"] = {
     "sidebar_ai_apikey_label": "API 密钥",
     "sidebar_ai_baseurl_label": "API 基础 URL",
     "sidebar_ai_model_label": "模型",
+    "sidebar_ai_remember_checkbox": "在此电脑上记住密钥",
+    "sidebar_ai_remember_warning": "仅保存在此电脑的浏览器中，不会保存到服务器。请勿在共用或公共电脑上使用。",
+    "sidebar_ai_forget_button": "忘记已保存的密钥",
     "sidebar_requirements_header": "### 📝 批准要求",
     "sidebar_requirements_body": (
         "**必需：**\n"
@@ -1330,6 +1366,9 @@ UI_STRINGS["th"] = {
     "sidebar_ai_apikey_label": "คีย์ API",
     "sidebar_ai_baseurl_label": "URL พื้นฐานของ API",
     "sidebar_ai_model_label": "โมเดล",
+    "sidebar_ai_remember_checkbox": "จำคีย์ไว้บนคอมพิวเตอร์เครื่องนี้",
+    "sidebar_ai_remember_warning": "เก็บไว้ในเบราว์เซอร์ของคอมพิวเตอร์เครื่องนี้เท่านั้น ไม่ได้เก็บบนเซิร์ฟเวอร์ อย่าใช้บนคอมพิวเตอร์ที่ใช้ร่วมกันหรือสาธารณะ",
+    "sidebar_ai_forget_button": "ลืมคีย์ที่บันทึกไว้",
     "sidebar_requirements_header": "### 📝 ข้อกำหนดการอนุมัติ",
     "sidebar_requirements_body": (
         "**บังคับ:**\n"
@@ -1424,6 +1463,9 @@ UI_STRINGS["cy"] = {
     "sidebar_ai_apikey_label": "Allwedd API",
     "sidebar_ai_baseurl_label": "URL sylfaen API",
     "sidebar_ai_model_label": "Model",
+    "sidebar_ai_remember_checkbox": "Cofio'r allwedd ar y cyfrifiadur hwn",
+    "sidebar_ai_remember_warning": "Wedi'i storio ym mhorwr y cyfrifiadur hwn yn unig, nid ar y gweinydd. Peidiwch â'i ddefnyddio ar gyfrifiadur a rennir neu gyhoeddus.",
+    "sidebar_ai_forget_button": "Anghofio'r allwedd sydd wedi'i chadw",
     "sidebar_requirements_header": "### 📝 Gofynion cymeradwyo",
     "sidebar_requirements_body": (
         "**Gofynnol:**\n"
@@ -1518,6 +1560,9 @@ UI_STRINGS["fy"] = {
     "sidebar_ai_apikey_label": "API-kaai",
     "sidebar_ai_baseurl_label": "API base-URL",
     "sidebar_ai_model_label": "Model",
+    "sidebar_ai_remember_checkbox": "Ûnthâld de kaai op dizze kompjûter",
+    "sidebar_ai_remember_warning": "Wurdt allinnich yn de browser fan dizze kompjûter bewarre, net op de server. Brûk dit net op in dielde of iepenbiere kompjûter.",
+    "sidebar_ai_forget_button": "Ferjit bewarre kaai",
     "sidebar_requirements_header": "### 📝 Easken foar goedkarring",
     "sidebar_requirements_body": (
         "**Ferplicht:**\n"
@@ -1612,6 +1657,9 @@ UI_STRINGS["gd"] = {
     "sidebar_ai_apikey_label": "Iuchair API",
     "sidebar_ai_baseurl_label": "URL bunaiteach API",
     "sidebar_ai_model_label": "Modail",
+    "sidebar_ai_remember_checkbox": "Cuimhnich an iuchair air a' choimpiutair seo",
+    "sidebar_ai_remember_warning": "Air a stòradh ann am brabhsair a' choimpiutair seo a-mhàin, chan ann air an fhrithealaiche. Na cleachd seo air coimpiutair co-roinnte no poblach.",
+    "sidebar_ai_forget_button": "Dìochuimhnich an iuchair a chaidh a shàbhaladh",
     "sidebar_requirements_header": "### 📝 Riatanasan aontachaidh",
     "sidebar_requirements_body": (
         "**Riatanach:**\n"
@@ -1706,6 +1754,9 @@ UI_STRINGS["sv"] = {
     "sidebar_ai_apikey_label": "API-nyckel",
     "sidebar_ai_baseurl_label": "API-bas-URL",
     "sidebar_ai_model_label": "Modell",
+    "sidebar_ai_remember_checkbox": "Kom ihåg nyckeln på den här datorn",
+    "sidebar_ai_remember_warning": "Sparas endast i webbläsaren på den här datorn, inte på servern. Använd inte detta på en delad eller offentlig dator.",
+    "sidebar_ai_forget_button": "Glöm sparad nyckel",
     "sidebar_requirements_header": "### 📝 Krav för godkännande",
     "sidebar_requirements_body": (
         "**Obligatoriskt:**\n"

@@ -53,6 +53,12 @@ try:
 except ImportError:
     REQUESTS_AVAILABLE = False
 
+try:
+    from streamlit_local_storage import LocalStorage
+    LOCAL_STORAGE_AVAILABLE = True
+except ImportError:
+    LOCAL_STORAGE_AVAILABLE = False
+
 
 # =============================================================================
 # Configuratie / constanten
@@ -62,6 +68,11 @@ st.set_page_config(page_title="CA Drukwerk Checker", page_icon="✅", layout="wi
 
 BLEED_TOOL_URL = "https://bleed-cmyk-builderpy-ecaauj8zkjwrhhivxmilqq.streamlit.app/"
 TRANSLATION_REQUEST_EMAIL = "picazuid@gmail.com"
+
+# Naam waaronder een (optioneel onthouden) API-sleutel in de localStorage van
+# de BROWSER van de gebruiker staat. Nooit op de server: andere bezoekers of
+# andere computers zien deze waarde dus niet.
+AI_KEY_STORAGE_NAME = "ca_checker_ai_api_key"
 
 # OCR/typfout-gevoelige tekens die vaak verward worden met cijfers
 _DIGIT_LOOKALIKES = {
@@ -896,22 +907,38 @@ def check_print_ready_pdf(pdf_bytes: bytes) -> dict:
 # Optionele AI-verfijning (OpenAI-compatibel; werkt o.a. met gratis Groq-sleutels)
 # =============================================================================
 
-def call_ai_verification(api_key, base_url, model, ocr_text):
+def call_ai_verification(api_key, base_url, model, ocr_text, required_sentence=None, language_name=None):
+    """
+    required_sentence: de verplichte zin van de gekozen taal (uit i18n.LANGUAGE_CONFIG).
+    Is die voor deze taal nog niet geconfigureerd (None), dan wordt de zin-controle
+    weggelaten uit de opdracht i.p.v. het model tegen een geraden tekst te laten toetsen.
+    """
     if not REQUESTS_AVAILABLE:
         return {"error": "Het Python-package 'requests' is niet beschikbaar op de server."}
     if not api_key:
         return {"error": "Geen API-sleutel opgegeven."}
 
+    language_name = language_name or "de taal van de flyer"
+    if required_sentence:
+        sentence_instruction = (
+            "1) staat de volgende zin er correct op (kleine OCR-fouten negeren, "
+            "echte spelfouten wel melden): \"" + required_sentence + "\" "
+        )
+    else:
+        sentence_instruction = (
+            "1) er is voor deze taal geen verplichte zin geconfigureerd: zet sentence_ok "
+            "op null en laat sentence_note leeg. "
+        )
+
     system_prompt = (
-        "Je bent een strikte Nederlandse taalcontroleur voor CA (Cocaine Anonymous) "
+        f"Je bent een strikte taalcontroleur ({language_name}) voor CA (Cocaine Anonymous) "
         "drukwerk. Je krijgt ruwe OCR-tekst van een flyer. Beoordeel: "
-        "1) staat de volgende zin er correct op (kleine OCR-fouten negeren, "
-        "echte spelfouten wel melden): \"" + REQUIRED_SENTENCE + "\" "
+        + sentence_instruction +
         "2) staat er een organisator vermeld? 3) staat er een adres/locatie/Zoomlink? "
         "4) staat er een datum en tijd? 5) staan er volledige persoonsnamen "
         "(voornaam+achternaam voluit, GEEN 'Voornaam A.'-vorm) die de anonimiteit "
         "kunnen schenden? Antwoord ALLEEN als JSON met keys: "
-        "sentence_ok (bool), sentence_note (str), organized_by (bool), "
+        "sentence_ok (bool of null), sentence_note (str), organized_by (bool), "
         "location (bool), date_time (bool), full_names (lijst van strings)."
     )
 
@@ -1055,7 +1082,9 @@ def analyze_file(uploaded_file, lang: str, ai_config=None, preloaded=None):
     # --- 4. Optionele AI-verfijning ---
     if ai_config and ai_config.get("api_key") and ocr_text.strip():
         ai_result = call_ai_verification(
-            ai_config["api_key"], ai_config["base_url"], ai_config["model"], ocr_text
+            ai_config["api_key"], ai_config["base_url"], ai_config["model"], ocr_text,
+            required_sentence=lang_config["required_sentence"],
+            language_name=LANGUAGES.get(lang, lang),
         )
         results["ai_result"] = ai_result
 
@@ -1200,14 +1229,76 @@ def main():
         st.caption(t("sidebar_ai_caption", lang))
         if not REQUESTS_AVAILABLE:
             st.warning(t("sidebar_ai_requests_warning", lang))
-        use_ai = st.checkbox(t("sidebar_ai_checkbox", lang), value=False)
+        # --- Optioneel onthouden van de API-sleutel (alleen in DEZE browser) ---
+        # De sleutel gaat naar de localStorage van de browser van de gebruiker
+        # en verlaat die browser nooit richting onze server-opslag. Een andere
+        # computer/browser ziet niets.
+        local_storage = LocalStorage() if LOCAL_STORAGE_AVAILABLE else None
+
+        # Wissen moet vóór het uitlezen gebeuren, en gebeurt via een vlag die de
+        # knop-callback zet (widget-waarden mogen alleen in een callback of vóór
+        # het aanmaken van de widget worden aangepast).
+        forget_now = st.session_state.pop("_ai_forget_requested", False)
+        if forget_now and local_storage is not None:
+            # eraseItem, niet deleteItem: deleteItem laat de waarde in de browser staan.
+            local_storage.eraseItem(AI_KEY_STORAGE_NAME, key="ai_store_erase")
+            local_storage.storedItems.pop(AI_KEY_STORAGE_NAME, None)
+
+        saved_key = None
+        if local_storage is not None and not forget_now:
+            saved_key = local_storage.getItem(AI_KEY_STORAGE_NAME) or None
+
+        # Eenmalig voorinvullen zodra de browser een opgeslagen sleutel meldt.
+        # De component antwoordt pas na de eerste render, dus dit gebeurt op de
+        # automatische herrun daarna.
+        # Alleen invullen als het veld leeg is: anders overschrijft dit een sleutel die
+        # de gebruiker zojuist zélf heeft getypt (direct na het opslaan kent Python
+        # de oude waarde al, waardoor een wijziging anders werd teruggedraaid).
+        if (
+            saved_key
+            and not st.session_state.get("_ai_key_prefilled")
+            and not st.session_state.get("ai_api_key_input")
+        ):
+            st.session_state["ai_api_key_input"] = saved_key
+            st.session_state["ai_use_checkbox"] = True
+            st.session_state["ai_remember"] = True
+            st.session_state["_ai_key_prefilled"] = True
+
+        use_ai = st.checkbox(t("sidebar_ai_checkbox", lang), value=False, key="ai_use_checkbox")
         ai_config = None
         if use_ai:
-            api_key = st.text_input(t("sidebar_ai_apikey_label", lang), type="password")
+            api_key = st.text_input(
+                t("sidebar_ai_apikey_label", lang), type="password", key="ai_api_key_input"
+            )
             base_url = st.text_input(t("sidebar_ai_baseurl_label", lang), value="https://api.groq.com/openai/v1")
             model = st.text_input(t("sidebar_ai_model_label", lang), value="openai/gpt-oss-20b")
             if api_key:
                 ai_config = {"api_key": api_key, "base_url": base_url, "model": model}
+
+            if local_storage is not None:
+                remember = st.checkbox(
+                    t("sidebar_ai_remember_checkbox", lang), value=False, key="ai_remember"
+                )
+                st.caption(t("sidebar_ai_remember_warning", lang))
+                if remember and api_key and api_key != saved_key:
+                    # Unieke component-sleutel per waarde: de opslag-component voert een
+                    # tweede setItem onder dezelfde sleutel niet uit, waardoor een
+                    # gewijzigde sleutel anders stil de OUDE waarde zou behouden. De
+                    # sleutel is een hash, zodat de echte API-sleutel nooit in een
+                    # element-id terechtkomt.
+                    set_key = "ai_store_set_" + hashlib.sha256(api_key.encode()).hexdigest()[:10]
+                    local_storage.setItem(AI_KEY_STORAGE_NAME, api_key, key=set_key)
+                    st.session_state["_ai_key_prefilled"] = True   # niet meer voorinvullen
+                if saved_key:
+                    def _request_forget():
+                        st.session_state["_ai_forget_requested"] = True
+                        st.session_state["ai_api_key_input"] = ""
+                        st.session_state["ai_remember"] = False
+                        st.session_state["_ai_key_prefilled"] = False
+                    st.button(
+                        t("sidebar_ai_forget_button", lang), key="ai_forget_button",
+                        on_click=_request_forget,
+                    )
 
         st.markdown("---")
         st.markdown(t("sidebar_requirements_header", lang))

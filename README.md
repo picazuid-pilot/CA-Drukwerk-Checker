@@ -165,6 +165,22 @@ stopgezet). Providers zetten modellen wel vaker stil; geeft de AI-verfijning
 een foutmelding terug, controleer dan eerst of het ingevulde modelnaam nog
 bestaat bij de gekozen provider.
 
+## API-sleutel onthouden op deze computer (optioneel)
+
+Bij "AI-verfijning" staat een vinkje **"Onthoud sleutel op deze computer"**.
+De sleutel wordt dan bewaard in de `localStorage` van de **browser** van de
+gebruiker — nooit op de server. Een andere computer of browser ziet niets;
+op een gedeelde of openbare computer moet je dit vinkje dus niet gebruiken.
+Met de knop **"Vergeet opgeslagen sleutel"** wordt de sleutel echt uit de
+browser gewist. Dit gebruikt het extra package `streamlit-local-storage`
+(staat in `requirements.txt`); ontbreekt het, dan werkt de app gewoon door,
+alleen zonder de onthoud-optie.
+
+**Zet nooit een API-sleutel in `app.py` of ergens anders in de repo.** Deze
+repo is publiek: geautomatiseerde bots scannen GitHub op sleutels en
+misbruiken die binnen korte tijd. Een sleutel die ooit in een chat, commit
+of screenshot heeft gestaan, moet je als gelekt beschouwen en vervangen.
+
 ## Lokaal draaien
 
 ```bash
